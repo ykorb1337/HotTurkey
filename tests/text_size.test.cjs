@@ -1,0 +1,22 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const hooks={},control={value:''},document={body:{style:{}},documentElement:{style:{setProperty(){}},classList:{toggle(){}}},querySelector:()=>control,addEventListener:(name,fn)=>hooks[name]=fn};
+const context={window:{innerWidth:1200,innerHeight:800,addEventListener(){}},document,performance:{now:()=>1000}};vm.createContext(context);vm.runInContext(fs.readFileSync('web/text-size.js','utf8'),context);
+const sizing=context.window.HotTurkeyTextSize,requests=[],errors=[];let fail=false,gate=null;
+sizing.configure({save:async v=>{requests.push(v);if(gate)await gate;if(fail)throw Error('请先输入设置密码');},notify:e=>errors.push(e)});
+const tick=()=>new Promise(setImmediate);
+const key=(name,extra={})=>{let prevented=false;hooks.keydown({key:name,metaKey:true,preventDefault(){prevented=true;},...extra});return prevented;};
+let count=0;
+(async()=>{
+ sizing.sync(150);assert.equal(document.body.style.zoom,'1.5');assert.equal(control.value,'150');count++;
+ key('+');await tick();assert.equal(sizing.value,160);assert.equal(requests.at(-1),160);key('-');await tick();assert.equal(sizing.value,150);count++;
+ key('*');await tick();assert.equal(sizing.value,100);count++;
+ assert.equal(key('+',{metaKey:false}),false);assert.equal(key('+',{altKey:true}),false);assert.equal(sizing.value,100);count++;
+ sizing.sync(200);key('+');assert.equal(sizing.value,200);sizing.sync(50);key('-');assert.equal(sizing.value,50);count++;
+ sizing.sync(100);let release;gate=new Promise(r=>release=r);key('+');key('+');key('+');sizing.sync(90);assert.equal(sizing.value,130);release();await tick();gate=null;assert.deepEqual(requests.slice(-2),[110,130]);count++;
+ fail=true;key('+');await tick();assert.equal(sizing.value,130);assert.equal(errors.at(-1),'请先输入设置密码');fail=false;count++;
+ let prevented=false;hooks.wheel({metaKey:true,deltaY:-80,deltaMode:0,preventDefault(){prevented=true;}});await tick();assert.equal(prevented,true);assert.equal(sizing.value,140);count++;
+ hooks.auxclick({metaKey:true,button:1,preventDefault(){}});await tick();assert.equal(sizing.value,100);count++;
+ hooks.change({target:{id:'text-scale',value:'175'}});await tick();assert.equal(sizing.value,175);sizing.sync(999);assert.equal(sizing.value,175);count++;
+ const source=fs.readFileSync('web/app.js','utf8').match(/function calendarY\([^\n]+/)[0];vm.runInContext(source,context);const point=(height,y)=>vm.runInContext(`calendarY({getBoundingClientRect:()=>({top:100,height:${height}})},${y})`,context);assert.equal(point(1440,820),360);assert.equal(point(360,280),360);assert.equal(point(720,-20),0);assert.equal(point(720,2000),719);count++;
+ console.log(`${count} text sizing, persistence races, password protection and input checks passed`);
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -70,6 +70,51 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('allowed.example',self.call('blocks/add-targets',{'id':b['id'],'websites':['allowed.example']})['websites'])
     def test_overview_privacy(self):
         self.block();self.call('settings',{'password':'secret','protect_overview':True});self.assertEqual(self.call('state')['blocks'],[])
+    def test_extension_add_site_preserves_locked_rule_and_runtime(self):
+        b=self.block(**{'break':{'type':'allowance','allowance_minutes':5}})
+        self.call('blocks/lock',{'id':b['id'],'type':'timer','until':self.service.engine.now()+600})
+        before=copy.deepcopy(self.service.engine.find(b['id']));runtime=copy.deepcopy(self.service.store.state['runtime'])
+        value=self.call('extension/add-site',{'id':b['id'],'url':'https://new.example/path?secret=x','scope':'domain','applications':['binary:/tmp/evil'],'exceptions':['*'],'enabled':False,'lock':{'type':'none'}})
+        after=copy.deepcopy(self.service.engine.find(b['id']));self.assertEqual(after.pop('websites'),before.pop('websites')+['new.example']);self.assertEqual(after,before)
+        self.assertEqual(self.service.store.state['runtime'],runtime);self.assertTrue(value['block']['locked']);self.assertTrue(value['matches_current_page'])
+        self.assertFalse(self.call('extension/add-site',{'id':b['id'],'url':'https://new.example','scope':'domain'})['added'])
+    def test_extension_add_site_requires_settings_password_without_manager_session(self):
+        b=self.block();self.call('settings',{'password':'manager','protect_overview':True})
+        for path in ['extension/add-site-options','extension/add-site']:
+            self.assertEqual(self.call(path,{'id':b['id'],'url':'https://new.example'}),{'authentication_required':True})
+        self.assertEqual(self.request('/api/extension/add-site-options',{'password':'wrong'})[0],400)
+        self.assertEqual(self.request('/api/extension/add-site-options',{'password':'manager'})[0],400)
+        self.service.auth_retry=0
+        options=self.call('extension/add-site-options',{'password':'manager'})
+        self.assertEqual(list(options['blocks'][0]),['id','name','enabled','locked','mode'])
+        self.assertTrue(self.call('extension/add-site',{'password':'manager','id':b['id'],'url':'https://new.example'})['ok'])
+        self.assertFalse(self.service.auth_sessions);self.assertEqual(self.request('/api/blocks/delete',{'id':b['id']})[0],400)
+    def test_extension_addition_reports_exception_without_replacing_it(self):
+        b=self.block(exceptions=['example.com/learn'])
+        value=self.call('extension/add-site',{'id':b['id'],'url':'https://example.com/learn/a?secret=x','scope':'page'})
+        self.assertFalse(value['matches_current_page']);self.assertEqual(value['target'],'https://example.com/learn/a');self.assertEqual(self.service.engine.find(b['id'])['exceptions'],b['exceptions'])
+    def test_extension_addition_cannot_create_or_start_device_rule(self):
+        b=self.block(device='lock',enabled=False,confirm_device=True)
+        self.assertEqual(self.call('extension/add-site-options',{})['blocks'],[])
+        self.assertEqual(self.request('/api/extension/add-site',{'id':b['id'],'url':'https://new.example'})[0],400)
+        self.assertEqual(self.request('/api/extension/add-site',{'id':'missing','url':'https://new.example'})[0],400)
+        self.assertFalse(self.service.engine.find(b['id'])['enabled'])
+    def test_native_host_addition_is_narrow_and_password_protected(self):
+        b=self.block();self.call('settings',{'password':'manager'})
+        env={**os.environ,'HOTTURKEY_DATA':self.temp.name,'PYTHONDONTWRITEBYTECODE':'1'}
+        messages=[{'op':'add-site-options','data':{}},{'op':'add-site','data':{'id':b['id'],'url':'https://new.example/a?secret=x','scope':'page','password':'manager'}}]
+        wire=b''.join(struct.pack('<I',len(blob))+blob for blob in [json.dumps(m).encode() for m in messages])
+        output=subprocess.check_output([sys.executable,'-B','-m','hotturkey.native_host'],input=wire,env=env);results=[]
+        while output:
+            size=struct.unpack('<I',output[:4])[0];results.append(json.loads(output[4:4+size]));output=output[4+size:]
+        self.assertEqual(results[0],{'authentication_required':True});self.assertTrue(results[1]['ok']);self.assertIn('https://new.example/a',self.service.engine.find(b['id'])['websites'])
+    def test_text_scale_validated_persisted_and_allowed_while_locked(self):
+        b=self.block();self.call('blocks/lock',{'id':b['id'],'type':'timer','until':self.service.engine.now()+60});self.call('settings',{'text_scale':150})
+        self.assertEqual(self.call('state')['settings']['text_scale'],150)
+        self.assertEqual(json.loads(self.service.store.db.execute('SELECT value FROM state WHERE id=1').fetchone()[0])['settings']['text_scale'],150)
+        for value in [True,49,201,120.5,'150',None]:self.assertEqual(self.request('/api/settings',{'text_scale':value})[0],400)
+        self.assertEqual(self.call('state')['settings']['text_scale'],150)
+        self.call('settings',{'password':'manager'});self.assertEqual(self.request('/api/settings',{'text_scale':100})[0],400)
     def test_strictness_protected(self):
         b=self.block();self.call('blocks/lock',{'id':b['id'],'type':'timer','until':self.service.engine.now()+60});self.assertEqual(self.request('/api/settings',{'block_embeds':False})[0],400);self.assertTrue(self.call('state')['settings']['block_embeds'])
     def test_settings_update_atomic(self):

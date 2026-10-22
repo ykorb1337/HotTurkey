@@ -153,3 +153,9 @@ node tests/tab_exceptions.test.cjs
 运行时来自 [Astral Python Build Standalone](https://github.com/astral-sh/python-build-standalone)，版本、架构、下载地址和校验值固定在 `runtime/python.lock.json`。构建时同时保留上游构建元数据和其引用的许可证文本，位于应用的 `Contents/Resources/ThirdParty/Python`；运行时自身的其他许可文件也保留在原目录。原生程序明确以 macOS 12 为最低构建目标，此声明不等同于旧系统实测。
 
 HotTurkey 自有代码按 [MIT License](LICENSE) 开源；第三方组件遵循各自许可。
+
+## New in 0.3.0
+
+The toolbar popup can append the current domain or path to an existing rule, including a locked rule. It respects the settings password, preserves exceptions/timers/toggles, and does not save URL queries or fragments. The real Edge domain flow has been tested; path/password UI flows were tested with explicit browser API doubles and real Native Messaging.
+
+Interface size is adjustable from 50–200% in Settings, with Command/Ctrl plus/minus or scrolling, and star/zero reset. The size is saved locally. Dialogs and navigation adapt to the effective viewport, and calendar dragging uses scaled coordinates. Native keyboard and 150% calendar interactions have been tested; native mouse gestures remain unverified.

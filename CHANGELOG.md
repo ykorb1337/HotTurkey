@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-10-22
+
+- Append the current domain or path from the extension toolbar popup to an existing rule, including locked rules. Preview the target, respect the settings password, and preserve the original rule configuration. Queries and fragments are not saved.
+- Persist interface size from 50–200%, with settings, keyboard and wheel controls. Adapt dialogs/navigation to zoom and correct calendar drag coordinates.
+- Normalize fully qualified domain names with a trailing dot consistently in backend and offline browser matching.
+- Verified real Edge domain additions, deduplication and subsequent blocking; native sizing shortcuts and calendar dragging at 150%. Isolated UI checks cover path additions, password flows and 200% dialogs.
+
 ## 0.2.0 — 2026-10-22
 
 - Temporarily unblock one tab for one rule, directly when unlocked or after text/password verification. Other tabs, applications and overlapping rules remain enforced; grants expire and are not persisted to disk.

@@ -16,6 +16,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 node tests/extension.test.cjs
 node tests/browser_pages.test.cjs
 node tests/tab_exceptions.test.cjs
+node tests/quick_add.test.cjs
+node tests/text_size.test.cjs
 python3 scripts/build.py --qa
 python3 tests/integration_peer.py
 python3 tests/integration_authority.py
@@ -36,3 +38,5 @@ bundled third-party components retain their own licenses.
 For interactive block-page QA, `python3 tests/integration_tab_ui.py` starts a
 local isolated fixture using the actual worker, backend and Native Messaging
 with browser API doubles. It is not a substitute for installed-extension tests.
+
+`python3 tests/integration_popup_ui.py` starts the disposable popup and manager UI fixture. Browser APIs are explicit doubles; the backend and Native Messaging are real. It does not modify installed data or browser registration.

@@ -16,7 +16,7 @@ CATEGORIES = {
     "购物": ["amazon.com", "ebay.com", "taobao.com", "jd.com", "temu.com"],
 }
 DEFAULT_SETTINGS = {
-    "theme": "light", "statistics": True, "incognito_statistics": True,
+    "theme": "light", "text_scale":100, "statistics": True, "incognito_statistics": True,
     "block_inactive": False, "block_embeds": True, "allow_files": True,
     "strict_usage": False, "idle_seconds": 180, "extension_grace": 60,
     "require_extension": False, "block_unsupported": False,
@@ -174,7 +174,7 @@ def matches(pattern, url):
     if re.match(r'^(?:chrome|edge|brave|vivaldi|opera|about):',url,re.I):return browser_page_matches(pattern,url)
     try:
         u = urlsplit(url if "://" in url else "https://" + url)
-        host = (u.hostname or "").lower().encode("idna").decode("ascii")
+        host = (u.hostname or "").lower().rstrip(".").encode("idna").decode("ascii")
     except (ValueError, UnicodeError):
         return False
     if pattern == "*.*":

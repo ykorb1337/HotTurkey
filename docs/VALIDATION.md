@@ -4,7 +4,7 @@
 
 ## 自动验证
 
-- Python 规则与服务测试：201 项通过（Python 3.9 与内置 Python 3.13 分别完整验证）。覆盖域名边界、路径和通配符、频道例外、规则独立性、跨午夜、锁定与到期、重启身份、时钟回退、各休息类型、并发额度去重、导入原子性、设置密码、Origin/Host 检查、Native Messaging 帧和操作权限隔离；执行器分片 UTF-8、半行超时、无效输出、超大帧、管道堵塞、停滞期间策略计时、关停及忽略终止信号的子进程清理验证。
+- Python rules/services: 214 passed with bundled Python 3.13; earlier system Python 3.9 run passed 213. 覆盖域名边界、路径和通配符、频道例外、规则独立性、跨午夜、锁定与到期、重启身份、时钟回退、各休息类型、并发额度去重、导入原子性、设置密码、Origin/Host 检查、Native Messaging 帧和操作权限隔离；执行器分片 UTF-8、半行超时、无效输出、超大帧、管道堵塞、停滞期间策略计时、关停及忽略终止信号的子进程清理验证。
 - 其中 18 项验证未启用的共享策略层：按 UID 隔离额度、会话、奖励、文本休息和统计；共享锁、日程启动与设备到期；旧数据迁移不重置额度；管理账号与设置密码限制。使用独立临时数据库，不代表已完成真实跨账号执行。
 - 其中 10 项验证本机 IPC 帧与边界：分片、截断、非法长度与 JSON、总超时，以及内核提供的真实 UID/PID；未注册系统监听服务。
 - JavaScript 扩展策略与网络规则检查：67 项通过；浏览器内部页执行与竞态检查：12 项通过；单标签页授权、隔离、到期与网络规则检查：17 项通过。覆盖规则匹配、独立例外、复杂例外降级及按标签页生成 session rules。
@@ -111,3 +111,17 @@ Python 与扩展使用同一组 39 个预期样例核对匹配、例外与受保
 ## 未验证的能力
 
 除 Steam 启动验证外，未在用户其他真实应用上测试强制结束；未触发真实锁屏、注销或关机；未停用原有 Cold Turkey；未验证 Safari、Firefox、Chrome、Brave、跨账号策略或系统级防篡改。功能表中的这些项目不能依据当前测试视为完成。
+
+## Popup additions and interface sizing (0.3.0)
+
+Final full regression: **214 Python tests** passed with bundled Python 3.13. The earlier system Python 3.9 run passed 213 tests; the added trailing-dot domain case was included in the final bundled run. Browser checks now total **121** (67 policies, 12 internal-page races, 17 tab grants, 14 popup additions, 11 sizing/persistence/coordinate checks).
+
+The worker accepts website additions only from its own top-level popup, re-reads the active tab, and rejects requests after navigation changes. The backend validates HTTP/HTTPS and the settings password again. It only appends one target to an existing ordinary rule, without applications, exceptions, toggles or lock edits. Queries and fragments are omitted; paths with wildcard/control characters are rejected. Password checks share the existing retry delay, issue no general management session, and clear the input after submission.
+
+`tests/integration_popup_ui.py` uses isolated data, a real backend and Native Messaging, and explicit browser API doubles. Actual Codex in-app browser interactions verified domain/path previews, locked additions, deduplication, exception warnings, wrong/correct settings passwords and additions to disabled rules without enabling them. Other rule fields and original runtime were preserved. Evidence: `build/quick-ui-proof.json`, `build/Popup-quick-add.png`.
+
+The installed Edge extension was reloaded and its real toolbar popup used in a new test window. Adding the current domain to a temporary text-locked rule succeeded; submitting it again reported an existing target. The current page then automatically redirected to the block page. Opening the popup from that block page also previewed the original domain. The temporary rules were unlocked normally and removed; the user's original rules and settings matched the baseline exactly. Real Edge path-menu interactions were interrupted by window changes/native menu automation, so path mode is supported by the isolated UI evidence above, not claimed as a completed real Edge test. Evidence: `build/edge-quick-add-proof.json`, `build/Edge-quick-add.png`.
+
+Sizing follows the [official text-size controls](https://getcoldturkey.com/support/how-to/change-text-size/), with an additional settings selector and zero-key reset. It uses a persistent 50–200% preference and respects settings authentication. Effective viewport sizing, compact navigation and scrollable dialog content keep the action footer visible. Calendar pointer coordinates are normalized to the displayed column height.
+
+In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, and a reload retained 140%. At 200%, the dialog and its save/cancel footer stayed within the viewport while the content scrolled. After enabling the test settings password, an unauthenticated reset was rejected and rolled back. In the real isolated `HotTurkey Quick QA.app`, Command-plus reached 110%, Command-minus changed 150% to 140%, star/zero reset to 100%, and the selector set 150%. Dragging Thursday at 150% saved 00:30–01:15 while the original Monday–Wednesday 09:00–10:00 entries remained intact. The QA app and its backend were stopped. Wheel/middle-button gestures have event tests but no native mouse-gesture test yet. Evidence: `build/native-text-size-proof.json`, `build/Text-size-200.png`.

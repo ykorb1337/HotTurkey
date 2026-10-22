@@ -103,7 +103,7 @@ class Service:
                     return self.respond(200,value)
                 if self.command!="GET": return self.respond(405,{"error":"Method not allowed"})
                 path="index.html" if parsed.path=="/" else parsed.path.lstrip("/")
-                allowed={"index.html":"text/html; charset=utf-8","app.js":"application/javascript","style.css":"text/css","icon.svg":"image/svg+xml"}
+                allowed={"index.html":"text/html; charset=utf-8","app.js":"application/javascript","text-size.js":"application/javascript","style.css":"text/css","icon.svg":"image/svg+xml"}
                 if path not in allowed: return self.respond(404,{"error":"Not found"})
                 return self.respond(200,(ROOT/"web"/path).read_bytes(),allowed[path])
             def do_GET(self):
@@ -125,6 +125,20 @@ class Service:
 
     def api(self,path,method,data,query,headers):
         e=self.engine
+        if path in {'/api/extension/add-site-options','/api/extension/add-site'} and method=='POST':
+            from .browser_additions import options,add_site
+            with self.store.lock:
+                hashed=self.store.state['settings']['settings_password']
+                if hashed:
+                    answer=data.get('password')
+                    if answer is None:return {'authentication_required':True}
+                    if not isinstance(answer,str) or len(answer)>5000:raise PolicyError('设置密码格式无效')
+                    if time.monotonic()<self.auth_retry:raise PolicyError('请稍后重试')
+                    if not password_ok(answer,hashed):
+                        self.auth_retry=time.monotonic()+2
+                        raise PolicyError('设置密码不正确')
+                if path.endswith('-options'):return {'blocks':options(e)}
+                return add_site(e,data)
         if path=="/api/auth" and method=="POST":
             if time.monotonic()<self.auth_retry: raise PolicyError("请稍后重试")
             hashed=self.store.state["settings"]["settings_password"]
@@ -233,7 +247,7 @@ class Service:
                         updated[k]=v
                     if updated["theme"] not in {"light","dark","system"}: raise PolicyError("主题无效")
                     if updated["week_start"] not in {"monday","sunday"}: raise PolicyError("周起始日无效")
-                    for k,lo,hi in [("extension_grace",5,600),("idle_seconds",30,3600),("retention_days",1,3650)]: updated[k]=integer(updated[k],lo,hi,k)
+                    for k,lo,hi in [("extension_grace",5,600),("idle_seconds",30,3600),("retention_days",1,3650),("text_scale",50,200)]: updated[k]=integer(updated[k],lo,hi,k)
                     if not isinstance(updated["warning_minutes"],list): raise PolicyError("提醒时间无效")
                     updated["warning_minutes"]=[integer(v,1,1440,"提醒分钟") for v in updated["warning_minutes"]]
                     if updated["open_at_login"]!=settings["open_at_login"]:

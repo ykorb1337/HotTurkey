@@ -25,8 +25,8 @@ def main():
         if payload is None: return
         try:
             message=json.loads(payload)
-            path={"check":"/api/check","sync":"/api/bridge","break":"/api/extension/break","closed-tab":"/api/extension/closed-tab",'tab-unblock':'/api/extension/tab-unblock','tab-close':'/api/extension/tab-close'}.get(message.get("op"))
-            # Browser content must never be able to mutate blocks/settings or unlock.
+            path={"check":"/api/check","sync":"/api/bridge","break":"/api/extension/break","closed-tab":"/api/extension/closed-tab",'tab-unblock':'/api/extension/tab-unblock','tab-close':'/api/extension/tab-close','add-site-options':'/api/extension/add-site-options','add-site':'/api/extension/add-site'}.get(message.get("op"))
+            # The popup may only append a validated website; no general edits/unlocks.
             if path is None: raise ValueError("Unsupported operation")
             connection=json.loads((default_data()/"connection.json").read_text())
             request=urllib.request.Request(f'http://127.0.0.1:{connection["port"]}{path}',data=json.dumps(message.get("data",{})).encode(),headers={"Authorization":"Bearer "+connection["token"],"Content-Type":"application/json"})
