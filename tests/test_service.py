@@ -76,7 +76,48 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.request('/api/settings',{'statistics':False,'extension_grace':-1})[0],400);self.assertTrue(self.call('state')['settings']['statistics'])
     def test_unknown_settings_ignored(self):self.call('settings',{'settings_password':'injected'});self.assertFalse(self.call('state')['settings']['settings_password'])
     def test_native_bridge_sync(self):
-        self.block();value=self.call('bridge',{'browser':'Edge','incognito_allowed':True,'files_allowed':False,'usage':[]});self.assertEqual(len(value['blocks']),1);self.assertTrue(self.call('state')['extensions']['Edge']['incognito'])
+        self.block();value=self.call('bridge',{'browser':'Edge','incognito_allowed':True,'files_allowed':False,'usage':[]});self.assertEqual(len(value['blocks']),1);self.assertTrue(value['tab_unblock_supported']);self.assertTrue(self.call('state')['extensions']['Edge']['incognito'])
+    def test_tab_grant_does_not_disable_rule_or_other_tab(self):
+        b=self.block();scope={'context':'a'*48,'tab':7}
+        value=self.call('extension/tab-unblock',{**scope,'id':b['id'],'minutes':5,'url':'https://example.com'})
+        self.assertTrue(value['granted'])
+        self.assertFalse(self.call('check',{**scope,'url':'https://example.com'})['blocked'])
+        self.assertTrue(self.call('check',{**scope,'tab':8,'url':'https://example.com'})['blocked'])
+        self.assertTrue(self.call('check',{'url':'https://example.com','exemptions':[b['id']]})['blocked'])
+        self.assertTrue(self.call('state')['blocks'][0]['blocking'])
+    def test_tab_grant_remains_separate_from_settings_authentication(self):
+        b=self.block();self.call('settings',{'password':'manager secret'})
+        self.assertTrue(self.call('extension/tab-unblock',{'context':'a'*48,'tab':7,'id':b['id'],'url':'https://example.com'})['granted'])
+        self.assertEqual(self.request('/api/blocks/delete',{'id':b['id']})[0],400)
+    def test_bridge_returns_only_current_instance_tab_grants(self):
+        b=self.block();scope={'context':'a'*48,'tab':7}
+        self.call('extension/tab-unblock',{**scope,'id':b['id'],'url':'https://example.com'})
+        value=self.call('bridge',{'browser':'Edge','context':scope['context'],'tabs':[7,8],'usage':[]})
+        self.assertEqual([g['tab'] for g in value['tab_grants']],[7])
+        self.assertEqual(value['tab_grants'][0]['revision'],value['blocks'][0]['tab_revision'])
+        self.assertEqual(self.call('bridge',{'browser':'Edge','context':'b'*48,'tabs':[7],'usage':[]})['tab_grants'],[])
+        self.call('extension/tab-close',scope)
+        self.assertTrue(self.call('check',{**scope,'url':'https://example.com'})['blocked'])
+    def test_tab_grant_still_obeys_other_matching_rules(self):
+        b=self.block();other=self.call('blocks/save',{'block':{'name':'Other','enabled':True,'websites':['example.com']}})
+        scope={'context':'a'*48,'tab':7}
+        self.call('extension/tab-unblock',{**scope,'id':b['id'],'url':'https://example.com'})
+        self.assertEqual([b['id'] for b in self.call('check',{**scope,'url':'https://example.com'})['blocks']],[other['id']])
+    def test_locked_tab_grant_requires_validation_and_is_revoked_on_append(self):
+        b=self.block();self.call('blocks/lock',{'id':b['id'],'type':'text','custom_text':'focus'})
+        data={'context':'a'*48,'tab':7,'id':b['id'],'url':'https://example.com'}
+        self.assertEqual(self.call('extension/tab-unblock',data)['challenge'],'focus')
+        self.assertEqual(self.request('/api/extension/tab-unblock',{**data,'answer':'wrong'})[0],400)
+        self.assertTrue(self.call('extension/tab-unblock',{**data,'answer':'focus'})['granted'])
+        self.call('blocks/add-targets',{'id':b['id'],'websites':['new.example']})
+        self.assertTrue(self.call('check',data)['blocked']);self.assertTrue(self.call('state')['blocks'][0]['locked'])
+    def test_native_host_preserves_tab_validation_errors(self):
+        b=self.block();self.call('blocks/lock',{'id':b['id'],'type':'timer','until':self.service.engine.now()+60})
+        env={**os.environ,'HOTTURKEY_DATA':self.temp.name,'PYTHONDONTWRITEBYTECODE':'1'}
+        value={'op':'tab-unblock','data':{'context':'a'*48,'tab':7,'id':b['id'],'url':'https://example.com'}}
+        payload=json.dumps(value).encode();process=subprocess.run([sys.executable,'-m','hotturkey.native_host'],input=struct.pack('<I',len(payload))+payload,capture_output=True,env=env,check=True)
+        length=struct.unpack('<I',process.stdout[:4])[0];result=json.loads(process.stdout[4:4+length])
+        self.assertTrue(result['policy']);self.assertIn('锁定条件',result['error'])
     def test_closed_internal_tab_reports_stats_and_bounded_notifications(self):
         b=self.block(websites=['edge://settings'])
         self.assertFalse(self.call('check',{'url':'edge://extensions/','record':False})['blocked'])

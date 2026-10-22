@@ -118,14 +118,28 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             do { try process.run(); service = process } catch { showError("无法启动后台：\(error)"); return }
         }
         retries += 1
-        if retries > 30 { showError("后台连接失败。请查看 ~/Library/Application Support/HotTurkey/service.log"); return }
-        DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { self.connect() }
+        if retries > 30 {
+            loadingLabel.stringValue = "后台正在启动或恢复连接，正在自动重试…"
+            loadingLabel.isHidden = false
+            if retries == 31 { desktopLog("background pending; continuing retry") }
+        }
+        // A cold runtime or launchd recovery may take longer than nine seconds.
+        // Keep one probe in flight and back off while the window remains usable.
+        DispatchQueue.main.asyncAfter(deadline:.now()+(retries > 30 ? 2.0 : 0.3)) { self.connect() }
     }
     func desktopLog(_ message:String) {
         // Never log the navigation URL, which initially carries a local token.
         let path = dataDirectory.appendingPathComponent("desktop.log")
         let data = "\(Date().timeIntervalSince1970) \(message)\n".data(using:.utf8)!
-        if let handle = try? FileHandle(forWritingTo:path) {
+        if let handle = try? FileHandle(forUpdating:path) {
+            let size = handle.seekToEndOfFile()
+            if size > 128*1024 {
+                handle.seek(toFileOffset:size-min(size,64*1024))
+                let tail = String(decoding:handle.readData(ofLength:64*1024),as:UTF8.self)
+                let recent = tail.split(separator:"\n").suffix(600).joined(separator:"\n")+"\n"
+                handle.truncateFile(atOffset:0)
+                handle.write(Data(recent.utf8))
+            }
             handle.seekToEndOfFile(); handle.write(data); handle.closeFile()
         } else { FileManager.default.createFile(atPath:path.path,contents:data,attributes:[.posixPermissions:0o600]) }
     }

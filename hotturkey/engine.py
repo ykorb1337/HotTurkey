@@ -342,7 +342,7 @@ class Engine:
             self.store.save()
             return self.status(b)
 
-    def evaluate(self,url,channels=(),active=True,embedded=False):
+    def evaluate(self,url,channels=(),active=True,embedded=False,exemptions=()):
         with self.store.lock:
             import re
             from urllib.parse import urlsplit
@@ -354,13 +354,14 @@ class Engine:
             needs_channel=(parsed.hostname or "").endswith("youtube.com") and parsed.path.startswith(("/watch","/shorts/")) and not channels
             pending_channel=False
             for b in self.store.state["blocks"]:
+                if b['id'] in exemptions:continue
                 if needs_channel and self.active(b) and any(re.search(r"youtube\.com/(?:@|channel/|c/|user/)",p) for p in b["websites"]+b["exceptions"]):
                     pending_channel=True
                 if self.active(b) and target_matches(b,url,channels) and not self.break_state(b)["allowed"]:
                     found.append({"id":b["id"],"name":b["name"],"break":self.break_state(b),"lock":self.status(b)["lock"],"exceptions":b["exceptions"]})
             return {"blocked":bool(found),"blocks":found,"pending_channel":pending_channel}
 
-    def usage(self,data,source):
+    def usage(self,data,source,exemptions=()):
         with self.store.lock:
             now=self.now()
             # Time is measured by the daemon, never trusted from the browser.
@@ -385,6 +386,9 @@ class Engine:
                 br=self.interval(b)[2]
                 bs=self.break_state(b)
                 if hit:
+                    if kind=='website' and b['id'] in exemptions:
+                        affected.append(b['id'])
+                        continue
                     if not bs["allowed"]: continue
                     # Multiple tabs/processes count once toward the same allowance.
                     charged=max(0,min(seconds,now-rt.get("last_charge",now-seconds)))

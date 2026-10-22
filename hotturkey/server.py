@@ -32,6 +32,8 @@ class Service:
         self.store=Store(directory)
         from .platform_macos import boot_id
         self.engine=Engine(self.store,boot_id=boot_id())
+        from .tab_exceptions import TabExceptions
+        self.tab_exceptions=TabExceptions(self.engine)
         if enforce:
             from .app_targets import ApplicationTargets
             self.engine.application_targets=ApplicationTargets()
@@ -134,15 +136,23 @@ class Service:
             return {"session":session}
         if path=="/api/check" and method=="POST":
             url=str(data.get("url",""))[:8192]
-            result=e.evaluate(url,data.get("channels",()),bool(data.get("active",True)),bool(data.get("embedded",False)))
+            with self.store.lock:
+                result=e.evaluate(url,data.get("channels",()),bool(data.get("active",True)),bool(data.get("embedded",False)),self.tab_exceptions.ids(data))
             if result["blocked"] and data.get("record",True): e.record_block(url,[b["id"] for b in result["blocks"]],incognito=data.get("incognito",False))
             return result
         if path=="/api/bridge" and method=="POST":
             browser=str(data.get("browser","unknown"))[:120]
             e.heartbeats[browser]={"at":e.now(),"incognito":bool(data.get("incognito_allowed")),"files":bool(data.get("files_allowed"))}
             for item in data.get("usage",[])[:200]:
-                e.usage(item,"browser:"+browser+":"+str(item.get("tab",0)))
-            return {"blocks":e.snapshot()["blocks"],"settings":{k:self.store.state["settings"][k] for k in ["block_inactive","block_embeds","allow_files","idle_seconds"]},"now":e.now()}
+                scoped={'context':data['context'],'tab':item.get('tab')} if 'context' in data else {}
+                e.usage(item,"browser:"+browser+":"+str(data.get("context","legacy"))+":"+str(item.get("tab",0)),self.tab_exceptions.ids(scoped))
+            with self.store.lock:
+                blocks=e.snapshot()['blocks']
+                for value,block in zip(blocks,self.store.state['blocks']):value['tab_revision']=self.tab_exceptions.revision(block)
+                grants=self.tab_exceptions.snapshot(data['context'],data.get('tabs',[])) if 'context' in data else []
+            return {"blocks":blocks,"tab_grants":grants,"tab_unblock_supported":True,"settings":{k:self.store.state["settings"][k] for k in ["block_inactive","block_embeds","allow_files","idle_seconds"]},"now":e.now()}
+        if path=='/api/extension/tab-unblock' and method=='POST':return self.tab_exceptions.request(data)
+        if path=='/api/extension/tab-close' and method=='POST':return self.tab_exceptions.close(data)
         if path=="/api/extension/break" and method=="POST":
             return e.request_break(data["id"],data)
         if path=="/api/extension/closed-tab" and method=="POST":

@@ -40,11 +40,13 @@ python3 scripts/build.py
 ## 当前能力
 
 - 网站规则：域名及子域名、URL 路径、通配符、搜索关键词、YouTube 频道、整个互联网、每规则独立例外、文本导入导出与内置分类。
-- 浏览器内部页：可添加 `edge://settings`、`chrome://extensions` 或 `about:addons`，命中时关闭标签页；宽泛通配符保留新标签页和扩展管理等页面，需显式指定才会拦截。真实 Edge 关页验证尚待完成。
+- 浏览器内部页：可添加 `edge://settings`、`chrome://extensions` 或 `about:addons`，命中时关闭标签页；宽泛通配符保留新标签页和扩展管理等页面，需显式指定才会拦截。Edge 已实测带唯一标记的内部页关闭与拦截记录。
 - 应用规则：Bundle ID、应用路径、文件夹、可执行文件；后台检查并结束命中的用户进程。Steam 客户端和游戏快捷方式会解析到实际安装目录，包含额外游戏库。
+- 跨规则导入：在网站或网站例外编辑器中选择其他规则，可多选屏蔽网站或例外列表，预览去重后合并，保存目标规则后才生效。锁定目标只能追加屏蔽网站，来源规则不变。
 - 每周日程：跨午夜、多天重复、拖动创建时段、每时段独立休息设置、显示其他规则。
 - 锁定：定时（只能延长）、时段、随机字符/单词/自定义文本、密码、等待、日程及重启锁。
 - 锁定期间可继续向同一条规则新增屏蔽网站和应用；界面提供只追加的编辑入口，保留锁定、日程与休息计时。文本锁也可增加验证长度，保留原文并追加内容；删除或替换已有项目、修改例外及其他配置仍需先解锁。
+- 单标签页临时放行：拦截页可对未锁定规则直接申请，或通过该规则的文本/密码验证，选择 1–1440 分钟。只跳过当前标签页中所选规则的网站拦截，其他规则、其他标签页及应用仍受限；关闭标签页、后台重启、规则变更或到期后失效。
 - 休息：番茄钟（持续规则可重置为新的完整专注阶段）、日/周/月/日程/滚动使用额度、专注奖励、文本/等待后休息、会话次数。
 - 自动启动：指定时间、每天、登录/唤醒、下一个日程时段。
 - 统计：本地 SQLite、网站/应用时长、拦截次数、日期/用户/规则/类别/关键词过滤、JSON 导出及删除。删除统计不会重置额度。
@@ -70,7 +72,7 @@ python3 scripts/install.py --extension-id 你的32位扩展ID
 
 原生执行器异常退出或无响应时，后台会自动重启它，并在界面显示“正在恢复拦截”。重试间隔逐步增加至最多 30 秒；等待恢复期间继续处理日程与锁定计时。执行器重启不会被当成新的登录事件。
 
-桌面页面发生导航失败或 Web 内容进程退出时会自动重新连接，最多重试 3 次；日志不记录页面 URL 或连接令牌。
+桌面页面发生导航失败或 Web 内容进程退出时会自动重新连接，最多重试 3 次。连接后台时则持续自动重试，等待较久后降低频率，不因冷启动超过 9 秒而放弃；日志大小有界，不记录页面 URL 或连接令牌。
 
 `--extension-id` 可重复指定。浏览器加载路径变化可能改变扩展 ID，必须重新注册。推荐先执行 `--prepare-only`，再加载安装目录下的 `runtime/extension`，最后带 ID 执行安装命令。
 
@@ -127,6 +129,7 @@ python3 scripts/install.py --uninstall
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 node tests/extension.test.cjs
 node tests/browser_pages.test.cjs
+node tests/tab_exceptions.test.cjs
 ```
 
 `tests/integration_macos.py` 只拦截它自行编译的临时测试进程。`tests/edge_fixture.py` 是真实 Edge 验证用的临时规则工具，需按验证报告执行并在结束时清理。
@@ -136,6 +139,8 @@ node tests/browser_pages.test.cjs
 `python3 tests/integration_runtime.py` 会将完整应用搬移到含中文和空格的新路径，在无开发工具 PATH 的环境下实际验证内置解释器、后台、原生拦截和 Native Messaging，并核对动态库依赖与运行后的签名。
 
 共享策略与系统通信基础位于 `authority.py`、`authority_server.py`、`ipc.py` 和原生 `PolicyClient.swift` / `PeerCheck.swift`，当前未接入已安装后台。真实签名客户端已验证按系统身份管理规则、锁定中追加、设置密码保护和重启持久化；普通用户代码即使使用相同 UID 也不能冒充客户端。生产入口要求受保护的 root 安装路径，应用不自动启用该服务。它尚未构成系统级防卸载或多账号强制功能；边界与后续工作见 [系统服务说明](docs/SYSTEM-SERVICE.md)。`python3 tests/integration_peer.py` 和 `python3 tests/integration_authority.py` 可在 `--qa` 构建后运行，不需要安装系统服务。
+
+`python3 tests/integration_startup.py --prepare` 会生成故意延迟后台启动的独立应用。手动打开所返回的测试应用，运行 `--verify` 检查超过旧等待上限后自动恢复；测试不注册登录项或改动正式数据。
 
 ## 实现结构
 

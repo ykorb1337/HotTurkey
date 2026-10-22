@@ -15,6 +15,7 @@ Run the local suite on macOS:
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 node tests/extension.test.cjs
 node tests/browser_pages.test.cjs
+node tests/tab_exceptions.test.cjs
 python3 scripts/build.py --qa
 python3 tests/integration_peer.py
 python3 tests/integration_authority.py
@@ -31,3 +32,7 @@ Do not include databases, connection files, logs, credentials, signing identitie
 or browsing histories in commits or issues. Screenshots and diagnostics should
 use synthetic rules. Code contributions are accepted under the MIT license;
 bundled third-party components retain their own licenses.
+
+For interactive block-page QA, `python3 tests/integration_tab_ui.py` starts a
+local isolated fixture using the actual worker, backend and Native Messaging
+with browser API doubles. It is not a substitute for installed-extension tests.
