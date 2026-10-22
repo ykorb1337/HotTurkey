@@ -1,0 +1,3 @@
+'use strict';
+const api=typeof browser!=='undefined'?browser:chrome;
+api.runtime.sendMessage({op:'status'}).then(state=>{const status=document.querySelector('#connection');status.textContent=state.connected?'● 已连接本地后台':'○ 后台离线 · 使用最近缓存规则';status.className=state.connected?'online':'offline';for(const b of state.blocks||[]){if(!b.enabled)continue;const row=document.createElement('div');row.className='status-item';const title=document.createElement('b');title.textContent=b.name;const description=document.createElement('p');const remaining=Math.ceil((b.break_status?.remaining||0)/60);description.textContent=(b.blocking?'正在拦截':'未拦截')+(remaining?' · 剩余 '+remaining+' 分钟':'')+(b.locked?' · 已锁定':'');row.append(title,description);document.querySelector('#blocks').append(row);}});

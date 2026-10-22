@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hotturkey"
+version = "0.1.0"
+description = "An independent open-source macOS focus blocker inspired by Cold Turkey"
+requires-python = ">=3.9"
+dependencies = []
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/ykorb1337/HotTurkey"
+Issues = "https://github.com/ykorb1337/HotTurkey/issues"
+
+[project.scripts]
+hotturkey = "hotturkey.cli:main"
+
+[tool.setuptools]
+packages = ["hotturkey"]

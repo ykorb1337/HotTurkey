@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "HotTurkey · Focus companion",
+  "version": "0.1.0",
+  "description": "Local website blocking, usage tracking and break status for HotTurkey on macOS.",
+  "permissions": ["nativeMessaging", "tabs", "storage", "webNavigation", "alarms", "idle", "declarativeNetRequest", "declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start", "all_frames": true, "match_about_blank": true}],
+  "web_accessible_resources": [{"resources": ["blocked.html", "blocked.js", "blocked.css", "icon.svg"], "matches": ["<all_urls>"]}],
+  "action": {"default_popup": "popup.html", "default_title": "HotTurkey"},
+  "incognito": "spanning"
+}

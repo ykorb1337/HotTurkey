@@ -1,0 +1,31 @@
+name: macOS checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Python rules, services and IPC
+        run: python3 -m unittest discover -s tests -v
+      - name: Browser policies and navigation races
+        run: |
+          node tests/extension.test.cjs
+          node tests/browser_pages.test.cjs
+          node --check web/app.js
+      - name: Native development build
+        run: python3 scripts/build.py --qa --system-python
+      - name: Real signed peers and policy RPC
+        run: |
+          python3 tests/integration_peer.py
+          python3 tests/integration_authority.py
