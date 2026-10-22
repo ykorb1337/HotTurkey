@@ -8,7 +8,7 @@ your rules locked while still adding new distractions to the list. Native
 desktop app, browser extension, background service and CLI. Local data. MIT
 license.
 
-[Download the Apple Silicon preview](https://github.com/ykorb1337/HotTurkey/releases/latest)
+[Download the Apple Silicon preview](https://github.com/ykorb1337/HotTurkey/releases)
 · [Feature coverage](docs/PARITY.md) · [Contributing](CONTRIBUTING.md)
 · [Security](SECURITY.md)
 
