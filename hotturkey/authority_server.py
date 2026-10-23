@@ -3,8 +3,8 @@
 Not registered by the current-user installer. Production startup requires root,
 pre-existing protected paths and a root-selected native client requirement.
 Process enforcement uses a protected kernel scanner, never a client PID list.
-Session usage has a separately attested native source. Browser integration and
-privileged installation remain open.
+Session usage and browser operations have separately attested native sources.
+Production browser deployment and privileged installation remain open.
 """
 import errno
 import json
@@ -40,13 +40,13 @@ def _text(value, limit, label):
 
 
 class PolicyRPC:
-    def __init__(self, authority, execution=None, sessions=None):
-        self.authority=authority;self.execution=execution;self.sessions=sessions
+    def __init__(self, authority, execution=None, sessions=None, browsers=None):
+        self.authority=authority;self.execution=execution;self.sessions=sessions;self.browsers=browsers
 
     def dispatch(self, identity, request):
         # Peer identity/role always comes from the kernel and code verifier.
-        # Only the session operation accepts foreground claims, cross-checked
-        # against the independent executor inventory before any usage is earned.
+        # Separate native roles submit session/browser claims, cross-checked
+        # against independent executor inventory before any usage is earned.
         if set(request)-{'op','data','session'}:raise PolicyError('请求字段无效')
         operation=_text(request.get('op'),32,'操作')
         data=request.get('data',{})
@@ -55,6 +55,9 @@ class PolicyRPC:
         uid=identity.uid
         self.authority._account(uid)
         with self.authority.store.lock:
+            if identity.role=='browser':
+                if operation!='browser-request' or session or self.browsers is None:raise PolicyError('浏览器只可使用扩展接口')
+                return self.browsers.consume(identity,data)
             if identity.role=='session':
                 if operation!='session-sample' or session or self.sessions is None:raise PolicyError('会话代理只可提交采样')
                 return self.sessions.consume(identity,data)
@@ -105,11 +108,11 @@ class AuthorityServer:
     A verifier is explicitly injected for isolated tests. Production constructs
     it only after checking root ownership and uses authenticated_roles.
     """
-    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1, execution=None, sessions=None):
+    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1, execution=None, sessions=None, browsers=None):
         if type(workers) is not int or not 1<=workers<=32:raise ValueError('Invalid worker count')
         self.authority=authority
         self.execution=execution
-        self.rpc=PolicyRPC(authority,execution,sessions)
+        self.rpc=PolicyRPC(authority,execution,sessions,browsers)
         self.path=Path(path)
         self.verifier=verifier
         self.slots=threading.BoundedSemaphore(workers)
@@ -237,18 +240,20 @@ def production_server():
     config_path=trusted_path(CONFIG)
     if config_path.stat().st_size>16384:raise ValueError('Authority configuration too large')
     config=json.loads(config_path.read_text())
-    if set(config)!={'version','controller_uid','requirements'} or config['version']!=2:
+    if set(config)!={'version','controller_uid','requirements'} or config['version']!=3:
         raise ValueError('Unsupported authority configuration')
     requirements=config['requirements']
     # This local unsigned distribution pins a specific hardened native client.
     import re
-    if (not isinstance(requirements,dict) or set(requirements)!={'client','session'}
+    if (not isinstance(requirements,dict) or set(requirements)!={'client','session','browser'}
             or any(not isinstance(value,str) or not re.fullmatch(r'cdhash H"[0-9a-f]{40}"',value) for value in requirements.values())
-            or len(set(requirements.values()))!=2):
+            or len(set(requirements.values()))!=3):
         raise ValueError('Expected distinct pinned native role requirements')
     checker=trusted_path(INSTALL/'HotTurkeyPeerCheck')
     executor=trusted_path(INSTALL/'HotTurkeySystemAgent')
     trusted_path(INSTALL/'HotTurkeySessionAgent')
+    trusted_path(INSTALL/'HotTurkeyBrowserHost')
+    trusted_path(INSTALL/'browsers.json')
     trusted_directory(DATA)
     trusted_directory(SOCKET.parent)
     for path in DATA.iterdir():
@@ -264,7 +269,9 @@ def production_server():
         execution=SystemExecution(authority,executor,protected_paths=[INSTALL])
         from .trusted_sessions import TrustedSessions
         sessions=TrustedSessions(authority,execution)
-        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_roles(connection,checker,requirements),execution=execution,sessions=sessions)
+        from .trusted_browsers import TrustedBrowsers
+        browsers=TrustedBrowsers(authority,execution,sessions)
+        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_roles(connection,checker,requirements),execution=execution,sessions=sessions,browsers=browsers)
     except BaseException:
         store.db.close()
         raise

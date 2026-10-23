@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "HotTurkey · Focus companion",
   "version": "0.3.0",
+  "icons": {"16":"icons/icon-16.png","32":"icons/icon-32.png","48":"icons/icon-48.png","128":"icons/icon-128.png"},
   "description": "Local website blocking, usage tracking and break status for HotTurkey on macOS.",
   "permissions": [
     "nativeMessaging",
@@ -46,6 +47,7 @@
     }
   ],
   "action": {
+    "default_icon": {"16":"icons/icon-16.png","19":"icons/icon-19.png","32":"icons/icon-32.png","38":"icons/icon-38.png"},
     "default_popup": "popup.html",
     "default_title": "HotTurkey"
   },

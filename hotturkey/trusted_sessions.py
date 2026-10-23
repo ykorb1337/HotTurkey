@@ -33,6 +33,7 @@ class TrustedSessions:
     def __init__(self,authority,execution,session_identity=audit_session):
         self.authority=authority;self.execution=execution;self.session_identity=session_identity
         self.leases={}
+        self.external_targets=lambda uid:set()
 
     def status(self,uid):
         lease=self.leases.get(uid)
@@ -40,6 +41,12 @@ class TrustedSessions:
         age=max(0,self.authority.clock()-lease['at'])
         return {'status':'running' if age<=3 else 'stale','last_sample_age':age,
                 'on_console':lease['console'] if age<=3 else False}
+
+    def activity(self,uid):
+        """Private root-side context for browser accounting, never an RPC result."""
+        lease=self.leases.get(uid)
+        if not lease or self.authority.clock()-lease['at']>3 or not lease['verified_console']:return None
+        return {'pid':lease['front_pid'],'idle':lease['idle']}
 
     @staticmethod
     def validate(data):
@@ -97,6 +104,7 @@ class TrustedSessions:
                         matched={b['id'] for b in rules if engine.active(b) and engine.app_matches(b,app)}
                         if matched:background.append((app,matched))
                 background_ids=set().union(*(matched for _,matched in background))
+                if settings['strict_usage']:background_ids.update(self.external_targets(uid))
                 ids={b['id'] for b in rules if b['id'] not in background_ids}
                 if front.get('bundle') in BROWSERS:ids.intersection_update(b['id'] for b in rules if b['applications'])
                 engine.usage({**front,'idle':data['idle_seconds']},'system:foreground',policy_ids=ids,seconds_limit=duration)
@@ -107,6 +115,8 @@ class TrustedSessions:
                 for source in list(engine.sources):
                     if source.startswith(prefix) and source not in live:engine.sources.pop(source)
             self.leases[uid]={'owner':owner,'seq':data['sample_seq'],'event':data['event_seq'],
-                             'at':now,'console':data['on_console'],'valid':valid}
+                             'at':now,'console':data['on_console'],'valid':valid,
+                             'front_pid':data['front_pid'],'idle':data['idle_seconds'],
+                             'verified_console':bool(data['on_console'] and front)}
             self.authority.store.save()
             return {'accepted':True,'foreground_verified':bool(front)}

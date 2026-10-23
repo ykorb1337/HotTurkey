@@ -1,8 +1,8 @@
 """Protected process decisions using kernel samples, never client-reported PIDs.
 
 The current-user installer does not enable this service. Fresh inventory can
-verify a native session agent's foreground identity. Browser/device integration
-and privileged installation remain separate work.
+verify native session/browser identities. Protected browser deployment, device
+actions and privileged installation remain separate work.
 """
 import os
 import re
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .model import PolicyError
 from .platform_macos import native_samples, native_command, stop_native
+from .platform_macos import BROWSERS,UNSUPPORTED
 
 MAX_PROCESSES=32768
 MAX_KILLS=8192
@@ -94,6 +95,17 @@ class SystemDecisions:
                 if app['uid'] not in engines or app['pid'] in {os.getpid(),os.getppid()} or self.protected(app['executable']):continue
                 engine=engines[app['uid']]
                 hits=[b['id'] for b in self.authority.store.state['blocks'] if engine.active(b) and not engine.break_state(b)['allowed'] and engine.app_matches(b,app)]
+                settings=self.authority.store.state['settings'];bundle=app['bundle']
+                locked=[b['id'] for b in self.authority.store.state['blocks'] if engine.locked(b) and (not b['users'] or engine.user in b['users'])]
+                if locked:
+                    strict=((settings['block_task_manager'] and bundle=='com.apple.ActivityMonitor')
+                            or (settings['block_settings'] and bundle in {'com.apple.systempreferences','com.apple.ScreenTime'})
+                            or (settings['block_installer'] and bundle=='com.apple.installer')
+                            or (settings['block_unsupported'] and bundle in UNSUPPORTED))
+                    if bundle in BROWSERS and settings['require_extension']:
+                        since=max(engine.start_time,engine.heartbeats.get(BROWSERS[bundle],{}).get('at',0),app.get('start_sec',0))
+                        strict=strict or engine.now()-since>settings['extension_grace']
+                    if strict:hits=list(dict.fromkeys(hits+locked))
                 if hits:
                     if len(commands)>=MAX_KILLS:raise ValueError('Execution command limit exceeded')
                     command={k:app[k] for k in ['pid','uid','identity']};commands.append(command)

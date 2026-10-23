@@ -1,5 +1,7 @@
 # HotTurkey for macOS
 
+<img src="assets/icon.svg" width="96" height="96" alt="HotTurkey icon">
+
 **Cold focus. Open source.**
 
 An independent, open-source macOS focus blocker inspired by **Cold Turkey
@@ -160,4 +162,9 @@ The toolbar popup can append the current domain or path to an existing rule, inc
 
 Interface size is adjustable from 50–200% in Settings, with Command/Ctrl plus/minus or scrolling, and star/zero reset. The size is saved locally. Dialogs and navigation adapt to the effective viewport, and calendar dragging uses scaled coordinates. Native keyboard and 150% calendar interactions have been tested; native mouse gestures remain unverified.
 
-The unreleased protected-service foundation connects signed policy RPC, a kernel process executor and a separately attested native session agent, with isolated real-process tests. Native foreground claims are checked against fresh kernel identity; missing activity earns no credit. It is not enabled by the current-user installer. Agent supervision, browser integration, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
+The unreleased protected-service foundation connects signed policy RPC, a kernel process executor, a separately attested native session agent and a restricted browser host. Parent browser code/origin and fresh kernel identity are checked before browser operations; missing session activity earns no credit. It is not enabled by the current-user installer. Agent supervision, production browser deployment/tamper validation, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
+
+The original turkey icon uses warm tail feathers, a cream body and a dark tile.
+Its editable vector source is `assets/icon.json`; `scripts/build_icons.py`
+generates SVG, extension PNGs and the macOS ICNS without external graphics
+dependencies. The normal macOS build includes it automatically.

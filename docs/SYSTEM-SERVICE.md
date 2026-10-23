@@ -24,6 +24,23 @@ enforcement.
   production path/UID overrides. Root-selected distinct code requirements give
   it only the `session-sample` operation; ordinary management clients cannot
   report usage. The shared native transport checks the server UID first.
+- `HotTurkeyBrowserHost` accepts Native Messaging frames only after matching
+  its live same-UID parent against protected browser code requirements and a
+  configured extension origin. Chromium and Firefox invocation shapes are
+  handled separately. Its socket/expected root UID and configuration path are
+  fixed in production. It forwards only a browser-role envelope, with native
+  parent start identity, a random channel and increasing sequence.
+- `TrustedBrowsers` checks that parent against fresh kernel inventory and
+  dispatches only extension check/sync, break, tab-grant and append-only popup
+  operations. Browser/account/parent generations namespace grants. The native
+  session agent supplies foreground/idle context; no elapsed time or caller
+  idle value can manufacture website usage. Five-second extension syncs are
+  counted with server monotonic time, while long gaps are skipped. Strict
+  background targets do not simultaneously earn focus rewards.
+- Attested extension heartbeats feed the kernel executor's configured grace
+  period. Missing extensions, known unsupported browsers and optional settings,
+  installer/Activity Monitor strictness apply only to accounts affected by a
+  locked rule. Tests use disposable processes; user applications are untouched.
 - `TrustedSessions` verifies foreground information against fresh (at most
   three seconds old) executor inventory belonging to that kernel peer's UID.
   Root measures elapsed time; replay, concurrent agents, stale/idle/off-console
@@ -52,8 +69,8 @@ enforcement.
 - `SystemExecution` derives account contexts from those kernel samples and
   applies the shared authority's per-account application rules, schedules and
   existing break ledgers. Successful signal acknowledgements drive statistics;
-  rejected/stale actions are not reported as successful blocks. RPC exposes no
-  process-list, PID-kill or caller-supplied usage operation.
+  rejected/stale actions are not reported as successful blocks. Management RPC
+  exposes no process-list, PID-kill or caller-supplied usage operation.
 - The protected entry point requires the root-owned executor and starts it
   beside policy RPC. An executor crash, stalled pipe or invalid sample stops
   the authority and removes its socket, allowing an eventual launchd supervisor
@@ -66,9 +83,10 @@ enforcement.
   never replaced. Policy clock/storage failures stop the service so an eventual
   supervisor can restart it. Session tokens expire and are not persisted.
 
-The local ad-hoc build pins distinct client and session-agent `cdhash` values.
-Protected `authority.json` now requires version 2, `controller_uid`, and
-`requirements` with exactly `client` and `session` pinned requirement strings.
+The local ad-hoc build pins distinct client, session-agent and browser-host
+`cdhash` values. Protected `authority.json` now requires version 3,
+`controller_uid`, and `requirements` with exactly `client`, `session` and
+`browser` pinned requirement strings.
 There is no existing system installation to migrate; the current installer
 does not create this configuration. A release with a Developer ID
 will need an upgrade policy and appropriate designated requirement. Code
@@ -82,6 +100,7 @@ python3 scripts/build.py --qa
 python3 tests/integration_authority.py
 python3 tests/integration_system_enforcement.py
 python3 tests/integration_trusted_sessions.py
+python3 tests/integration_trusted_browsers.py
 ```
 
 The test starts an ordinary-user service in a temporary directory and uses the
@@ -121,17 +140,39 @@ console/foreground counts are recorded without application names or paths in
 transport success alone does not prove real foreground allowance expiry or
 sleep/wake behavior. No installed rules or GUI focus are changed.
 
+Browser integration uses an explicitly signed test parent and the QA browser
+host, both excluded from the app bundle. It verifies real parent code, origin,
+kernel PID/start identity, role separation, locked additions, single-tab grants,
+Chromium/Firefox argument formats and wrong-server rejection. Its test parent
+is not a real browser; evidence in `build/trusted-browser-proof.json` explicitly
+records that distinction. Native Messaging framing and invocation formats
+follow [Chrome's documentation](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+and [Mozilla's documentation](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging).
+
+The production host reads root-owned `browsers.json` beside the executables:
+version 1 with a `browsers` object keyed by the supported browser names. Each
+entry has a Security-framework `requirement` and an explicit `origins` array.
+Chromium origins are extension URLs; Firefox uses the add-on ID. The future
+installer must select actual approved vendor signatures, maintain root-owned
+host manifests and deploy an extension whose code the account cannot modify.
+An editable unpacked extension or developer tools can undermine browser
+reports even when the native parent is authentic. That deployment/tamper
+boundary is unresolved; this foundation is not enabled by the current app.
+
 ## Work still required before system installation
 
 1. Connect policy RPC to desktop, browser bridge and command-line clients with
    complete settings/import/export/statistics support and large-policy paging.
 2. Install/supervise the trusted session agents and complete browser heartbeats,
-   notifications and authorized device actions. Foreground/idle and native
+   notifications and authorized device actions. Protected browser transport,
+   heartbeat accounting and executor strictness now have isolated tests, but
+   production browser deployment and tamper resistance remain unverified.
+   Foreground/idle and native
    login/wake observations now have an isolated trusted path, but real GUI
    allowance expiry, sleep/wake and cross-account session transitions remain
    unverified. Missing agents do not invent activity; supervision and tamper
    recovery must be validated before this becomes a protective system mode.
-   Strictness/browser-presence options also still need integration.
+   Browser strictness still needs real-browser and cross-account validation.
 3. Provide a reviewed, transactional privileged installer, migration, startup,
    update and lock-aware uninstall path. Current expected paths are
    `/Library/PrivilegedHelperTools/local.hotturkey`,

@@ -107,6 +107,21 @@ class SystemDecisionsTests(unittest.TestCase):
         for fields in [{'start_sec':True},{'start_usec':1000000},{'start_sec':-1}]:
             with self.subTest(fields=fields),self.assertRaises(ValueError):self.decisions.consume(sample([{**process(),**fields}]))
             self.assertEqual(self.store.state,before)
+    def test_extension_heartbeat_grace_and_expiry_drive_browser_enforcement(self):
+        b=self.block(applications=[]);self.authority.manage(501,'lock',{'id':b['id'],'type':'timer','until':self.clock.now+600})
+        self.store.state['settings']['require_extension']=True
+        browser={**process(),'bundle':'com.microsoft.edgemac','start_sec':int(self.clock.now),'start_usec':0}
+        self.assertEqual(self.decisions.consume(sample([browser]))['kill'],[])
+        self.clock.advance(61);self.assertEqual(len(self.decisions.consume(sample([browser]))['kill']),1)
+        self.authority.engine(501).heartbeats['Edge']={'at':self.clock.now}
+        self.assertEqual(self.decisions.consume(sample([browser],[ack(browser,'stale',0)]))['kill'],[])
+        self.clock.advance(61);self.assertEqual(len(self.decisions.consume(sample([browser]))['kill']),1)
+    def test_strictness_is_limited_to_locked_accounts_and_protected_paths(self):
+        b=self.block(applications=[],users=['alice']);self.authority.manage(501,'lock',{'id':b['id'],'type':'timer','until':self.clock.now+600})
+        self.store.state['settings']['block_task_manager']=True
+        apps=[{**process(),'bundle':'com.apple.ActivityMonitor'},{**process(900002,502,'b'),'bundle':'com.apple.ActivityMonitor'},
+              {**process(900003,token='c',path='/protected/install/monitor'),'bundle':'com.apple.ActivityMonitor'}]
+        self.assertEqual([v['uid'] for v in self.decisions.consume(sample(apps))['kill']],[501])
     def test_executor_failure_stops_server_and_cleans_socket(self):
         class Failed:
             def run(self,stop):raise RuntimeError('Do not expose executable paths')

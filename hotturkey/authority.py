@@ -184,7 +184,7 @@ class PolicyAuthority:
         if not self.store.state['settings']['settings_password']:return True
         return isinstance(session,str) and self.sessions.get(session,0)>self.clock()
 
-    def authenticate(self, uid, password):
+    def verify_password(self, uid, password):
         self._account(uid)
         if uid!=self.controller_uid:raise PolicyError('只有管理账户可以验证管理密码')
         with self.store.lock:
@@ -193,6 +193,10 @@ class PolicyAuthority:
             if stored and not password_ok(password,stored):
                 self.auth_retry=self.clock()+2
                 raise PolicyError('设置密码不正确')
+
+    def authenticate(self, uid, password):
+        with self.store.lock:
+            self.verify_password(uid,password)
             self.sessions={key:until for key,until in self.sessions.items() if until>self.clock()}
             # Bound memory even when the approved manager repeatedly authenticates.
             while len(self.sessions)>=64:self.sessions.pop(next(iter(self.sessions)))

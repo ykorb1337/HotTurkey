@@ -126,6 +126,12 @@ class SessionTests(unittest.TestCase):
     def test_wall_clock_jump_does_not_overcharge_monotonic_interval(self):
         b=self.block();self.consume();self.clock.now+=3600;self.clock.mono+=1;self.consume()
         self.assertEqual(self.used(b),1)
+    def test_reported_strict_web_target_prevents_native_focus_rewards(self):
+        self.store.state['settings']['strict_usage']=True
+        b=self.block(applications=[],websites=['blocked.example'],**{'break':{'type':'reward','work_minutes':1,'break_minutes':1}})
+        self.sessions.external_targets=lambda uid:{b['id']}
+        self.consume();self.clock.advance(2);self.consume()
+        self.assertEqual(self.authority.engine(501).runtime(b).get('focus_seconds',0),0)
 
 
 if __name__=='__main__':unittest.main()

@@ -28,7 +28,9 @@ let attributes=[kSecGuestAttributeAudit as String:token] as CFDictionary
 var result=SecCodeCopyGuestWithAttributes(nil,attributes,flags,&code)
 guard result==errSecSuccess,let code else { report(["ok":false,"stage":"peer","status":result],1) }
 if arguments[3]=="--roles" {
-    guard let encoded=arguments[4].data(using:.utf8),let choices=(try? JSONSerialization.jsonObject(with:encoded)) as? [String:String],Set(choices.keys)==Set(["client","session"]),Set(choices.values).count==2 else { report(["ok":false,"stage":"roles"],2) }
+    guard let encoded=arguments[4].data(using:.utf8),let choices=(try? JSONSerialization.jsonObject(with:encoded)) as? [String:String],
+          Set(["client","session"]).isSubset(of:Set(choices.keys)),Set(choices.keys).isSubset(of:Set(["client","session","browser"])),
+          Set(choices.values).count==choices.count else { report(["ok":false,"stage":"roles"],2) }
     var matched=[String]()
     for (role,text) in choices {
         var candidate:SecRequirement?

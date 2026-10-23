@@ -20,17 +20,21 @@ def main():
     parser.add_argument('--archive',action='store_true',help='额外生成保留应用签名与链接的 ZIP 包')
     args=parser.parse_args()
     BUILD.mkdir(exist_ok=True)
+    from build_icons import build_icons
+    application_icon=build_icons()
     module_cache=BUILD/"swift-cache";module_cache.mkdir(exist_ok=True)
     targets=[("Agent.swift","HotTurkeyAgent",["AppKit","CoreGraphics"]),("Desktop.swift","HotTurkey",["AppKit","WebKit","UserNotifications"]),("PeerCheck.swift","HotTurkeyPeerCheck",["Foundation","Security"]),("PolicyClient.swift","HotTurkeyPolicyClient",["Foundation"])]
     targets.append(('SessionAgent.swift','HotTurkeySessionAgent',['AppKit','CoreGraphics']))
+    targets.append(('BrowserHost.swift','HotTurkeyBrowserHost',['Foundation','Security']))
     if args.qa:
         targets.extend([("PeerFixture.swift","HotTurkeyPeerFixture",["Foundation"]),("PolicyClient.swift","HotTurkeyPolicyClientQA",["Foundation"])])
         targets.append(('SessionAgent.swift','HotTurkeySessionAgentQA',['AppKit','CoreGraphics']))
+        targets.extend([('BrowserHost.swift','HotTurkeyBrowserHostQA',['Foundation','Security']),('BrowserFixture.swift','HotTurkeyBrowserFixture',['Foundation'])])
     for source,name,frameworks in targets:
         architecture='arm64' if platform.machine() in {'arm64','aarch64'} else 'x86_64'
         command=["/usr/bin/swiftc","-swift-version","5","-target",architecture+'-apple-macos12.0',"-O","-module-cache-path",str(module_cache),str(ROOT/"native"/source),"-o",str(BUILD/name)]
-        if source in {'PolicyClient.swift','SessionAgent.swift'}:command.append(str(ROOT/'native/LocalPolicySocket.swift'))
-        if name in {'HotTurkeyPolicyClientQA','HotTurkeySessionAgentQA'}:command.extend(['-D','QA'])
+        if source in {'PolicyClient.swift','SessionAgent.swift','BrowserHost.swift'}:command.append(str(ROOT/'native/LocalPolicySocket.swift'))
+        if name in {'HotTurkeyPolicyClientQA','HotTurkeySessionAgentQA','HotTurkeyBrowserHostQA'}:command.extend(['-D','QA'])
         for framework in frameworks:command.extend(["-framework",framework])
         subprocess.run(command,check=True)
         if name!='HotTurkey':
@@ -41,6 +45,7 @@ def main():
     app=BUILD/"HotTurkey.app/Contents"
     (app/"MacOS").mkdir(parents=True,exist_ok=True)
     resources=app/"Resources";resources.mkdir(exist_ok=True)
+    shutil.copy2(application_icon,resources/'HotTurkey.icns')
     shutil.copy2(BUILD/"HotTurkey",app/"MacOS/HotTurkey")
     project=resources/"project"
     project.mkdir(exist_ok=True)
@@ -54,6 +59,7 @@ def main():
     shutil.copy2(BUILD/"HotTurkeyPolicyClient",project/"build/HotTurkeyPolicyClient")
     shutil.copy2(BUILD/'HotTurkeySystemAgent',project/'build/HotTurkeySystemAgent')
     shutil.copy2(BUILD/'HotTurkeySessionAgent',project/'build/HotTurkeySessionAgent')
+    shutil.copy2(BUILD/'HotTurkeyBrowserHost',project/'build/HotTurkeyBrowserHost')
     python=resources/'python'
     third_party=resources/'ThirdParty/Python'
     if python.exists():shutil.rmtree(python)
@@ -75,6 +81,7 @@ def main():
             if magic in {b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf',b'\xca\xfe\xba\xbe',b'\xbe\xba\xfe\xca'}:
                 subprocess.run(['/usr/bin/codesign','--force','--sign','-',str(path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     info={"CFBundleName":"HotTurkey","CFBundleDisplayName":"HotTurkey","CFBundleIdentifier":"local.hotturkey.desktop","CFBundleVersion":"3","CFBundleShortVersionString":"0.3.0","CFBundleExecutable":"HotTurkey","CFBundlePackageType":"APPL","LSMinimumSystemVersion":"12.0","NSHighResolutionCapable":True,"NSAppleEventsUsageDescription":"HotTurkey uses device rules to log out or shut down your Mac when you configure them.","NSAppTransportSecurity":{"NSAllowsLocalNetworking":True}}
+    info['CFBundleIconFile']='HotTurkey.icns'
     (app/"Info.plist").write_bytes(plistlib.dumps(info))
     # Ad-hoc signing allows local execution; distribution still needs a Developer ID.
     subprocess.run(["/usr/bin/codesign","--force","--deep","--sign","-",str(BUILD/"HotTurkey.app")],check=True)

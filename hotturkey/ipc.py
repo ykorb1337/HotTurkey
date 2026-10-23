@@ -149,8 +149,8 @@ def authenticated_peer(connection, checker, requirement):
 
 def authenticated_roles(connection,checker,requirements):
     """The protected configuration selects roles, never the caller's JSON."""
-    if set(requirements)!={'client','session'} or len(set(requirements.values()))!=2:
-        raise ValueError('Distinct client and session requirements are required')
+    if not {'client','session'}<=set(requirements)<={'client','session','browser'} or len(set(requirements.values()))!=len(requirements):
+        raise ValueError('Distinct native role requirements are required')
     identity=peer_identity(connection)
     executable=trusted_path(checker)
     result=subprocess.run([str(executable),'--audit',base64.b64encode(identity.audit_token).decode(),

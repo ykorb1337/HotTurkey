@@ -128,6 +128,32 @@ In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, a
 
 ## Protected kernel execution foundation (unreleased)
 
+The latest source adds a restricted native browser host. Fifteen browser tests
+cover roles, parent UID/start/bundle checks, replay, batch validation, native
+foreground/idle gating, audible tabs, clock/gap bounds, account policy filtering,
+password-protected locked additions, tab isolation, strict background rewards
+and source cleanup. Three more tests cover native/web reward coordination and
+executor heartbeat/strictness. Full current regression: **261 Python tests**;
+browser policy/UI checks remain **121**.
+
+`tests/integration_trusted_browsers.py` uses a real signed disposable parent and
+native host with the kernel scanner and protected RPC. It verifies code/origin,
+kernel parent identity, three separate roles, locked additions, tab grants,
+Chromium/Firefox invocation shapes, unsupported management/elapsed fields and
+no password bytes sent to a wrong-UID server. It does not launch a real browser
+or prove extension tamper resistance. Evidence is generated in ignored
+`build/trusted-browser-proof.json`; current-user installations retain their
+existing bridge until protected deployment is ready.
+
+The original icon was rendered at 16 through 1024 pixels, visually checked at
+32 and 1024, and packaged as ICNS plus extension PNGs. The installed application's
+icon resources and bundle metadata were updated while retaining v0.3.0 backend
+code; deep signature and healthy background connection were checked afterward.
+Rules/settings matched the original digest. Dock UI observation timed out, so
+cache refresh is not claimed as visually verified. Evidence:
+`build/installed-icon-proof.json`. The editable vector and renderer are public;
+proofs and local installation backups are excluded.
+
 The current source additionally has a separately attested native session agent.
 Run `python3 tests/integration_trusted_sessions.py` after the QA build for passive
 console/foreground/idle sampling through real signed IPC, kernel audit-session
@@ -140,8 +166,8 @@ cross-account behavior or foreground allowance expiry.
 Fifteen added unit tests cover trusted session roles, root-measured usage,
 replay/concurrent agents, idle/console/gap transitions, account isolation,
 kernel inventory freshness/identity, persistent login markers, monotonic caps
-and strict background reward boundaries. The complete source suite now has
-243 Python tests; browser checks remain 121. These counts describe the source,
+and strict background reward boundaries. At that milestone the source suite had
+243 Python tests; browser checks remained 121. These counts describe the source,
 not the unchanged v0.3.0 release assets.
 
 The source now connects the experimental authority to an independent libproc-based executor. Fourteen new decision/lifecycle tests cover kernel-derived account contexts, selected/all-user scope, per-UID allowance ledgers, locked additions, protected paths, changing process identities, acknowledged statistics, malformed/oversized frames and authority shutdown on executor failure. Full local regression: **228 Python tests passed** with system Python 3.9.6.

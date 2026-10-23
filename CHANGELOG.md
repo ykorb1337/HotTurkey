@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add an original turkey icon across the macOS app, web interface and browser
+  extension. Generate SVG, multi-resolution PNG and ICNS from one editable
+  vector source; retain transparent macOS padding and small-size rendering.
+- Connect an experimental signed browser host to protected policy RPC. Verify
+  the live parent's code requirement, configured extension origin and kernel
+  UID/start identity; expose only extension operations, preserve locks and
+  per-tab grants, and use trusted native session state for website accounting.
+- Connect protected extension heartbeats and locked-account strictness to the
+  kernel executor, including the configured extension grace period. Real
+  browsers, privileged deployment and extension tamper resistance remain open.
+
 - Add a separate hardened native session agent for actual console, foreground,
   idle and wake/session-active observations. Protected RPC attests distinct
   client/session code roles; management clients cannot submit usage and session
