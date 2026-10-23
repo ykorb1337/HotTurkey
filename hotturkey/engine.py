@@ -361,13 +361,14 @@ class Engine:
                     found.append({"id":b["id"],"name":b["name"],"break":self.break_state(b),"lock":self.status(b)["lock"],"exceptions":b["exceptions"]})
             return {"blocked":bool(found),"blocks":found,"pending_channel":pending_channel}
 
-    def usage(self,data,source,exemptions=()):
+    def usage(self,data,source,exemptions=(),policy_ids=None,seconds_limit=None):
         with self.store.lock:
             now=self.now()
             # Time is measured by the daemon, never trusted from the browser.
             previous=self.sources.get(source,now)
             self.sources[source]=now
             seconds=max(0,min(10,now-previous))
+            if seconds_limit is not None:seconds=min(seconds,max(0,seconds_limit))
             settings=self.store.state["settings"]
             idle=max(0,float(data.get("idle",0)))
             if idle>settings["idle_seconds"] and not data.get("playing"): return
@@ -380,6 +381,7 @@ class Engine:
                 target=urlsplit(target).hostname or target
             affected=[]
             for b in self.store.state["blocks"]:
+                if policy_ids is not None and b['id'] not in policy_ids:continue
                 if not self.active(b): continue
                 hit=target_matches(b,data["url"],data.get("channels",())) if kind=="website" else self.app_matches(b,data)
                 rt=self.runtime(b)

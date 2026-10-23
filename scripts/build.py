@@ -22,15 +22,18 @@ def main():
     BUILD.mkdir(exist_ok=True)
     module_cache=BUILD/"swift-cache";module_cache.mkdir(exist_ok=True)
     targets=[("Agent.swift","HotTurkeyAgent",["AppKit","CoreGraphics"]),("Desktop.swift","HotTurkey",["AppKit","WebKit","UserNotifications"]),("PeerCheck.swift","HotTurkeyPeerCheck",["Foundation","Security"]),("PolicyClient.swift","HotTurkeyPolicyClient",["Foundation"])]
+    targets.append(('SessionAgent.swift','HotTurkeySessionAgent',['AppKit','CoreGraphics']))
     if args.qa:
         targets.extend([("PeerFixture.swift","HotTurkeyPeerFixture",["Foundation"]),("PolicyClient.swift","HotTurkeyPolicyClientQA",["Foundation"])])
+        targets.append(('SessionAgent.swift','HotTurkeySessionAgentQA',['AppKit','CoreGraphics']))
     for source,name,frameworks in targets:
         architecture='arm64' if platform.machine() in {'arm64','aarch64'} else 'x86_64'
         command=["/usr/bin/swiftc","-swift-version","5","-target",architecture+'-apple-macos12.0',"-O","-module-cache-path",str(module_cache),str(ROOT/"native"/source),"-o",str(BUILD/name)]
-        if name=='HotTurkeyPolicyClientQA':command.extend(['-D','QA'])
+        if source in {'PolicyClient.swift','SessionAgent.swift'}:command.append(str(ROOT/'native/LocalPolicySocket.swift'))
+        if name in {'HotTurkeyPolicyClientQA','HotTurkeySessionAgentQA'}:command.extend(['-D','QA'])
         for framework in frameworks:command.extend(["-framework",framework])
         subprocess.run(command,check=True)
-        if name in {"HotTurkeyAgent","HotTurkeyPeerCheck","HotTurkeyPeerFixture","HotTurkeyPolicyClient","HotTurkeyPolicyClientQA"}:
+        if name!='HotTurkey':
             subprocess.run(["/usr/bin/codesign","--force","--options","runtime","--sign","-",str(BUILD/name)],check=True)
     for name,flags in [('HotTurkeySystemAgent',[])]+([('HotTurkeySystemAgentQA',['-DHOTTURKEY_QA'])] if args.qa else []):
         subprocess.run(['/usr/bin/clang','-fobjc-arc','-O2','-Wall','-Wextra','-Werror','-mmacosx-version-min=12.0','-framework','Foundation',*flags,str(ROOT/'native/SystemAgent.m'),'-o',str(BUILD/name)],check=True)
@@ -50,6 +53,7 @@ def main():
     shutil.copy2(BUILD/"HotTurkeyPeerCheck",project/"build/HotTurkeyPeerCheck")
     shutil.copy2(BUILD/"HotTurkeyPolicyClient",project/"build/HotTurkeyPolicyClient")
     shutil.copy2(BUILD/'HotTurkeySystemAgent',project/'build/HotTurkeySystemAgent')
+    shutil.copy2(BUILD/'HotTurkeySessionAgent',project/'build/HotTurkeySessionAgent')
     python=resources/'python'
     third_party=resources/'ThirdParty/Python'
     if python.exists():shutil.rmtree(python)

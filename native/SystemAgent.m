@@ -58,7 +58,8 @@ static NSDictionary *inspect(pid_t pid) {
         parent=parent.stringByDeletingLastPathComponent;
     }
     return @{@"pid":@(pid),@"uid":@(before.pbi_ruid),@"identity":hex,@"executable":executable,
-             @"path":bundlePath,@"application":application,@"bundle":bundle};
+             @"path":bundlePath,@"application":application,@"bundle":bundle,
+             @"start_sec":@(before.pbi_start_tvsec),@"start_usec":@(before.pbi_start_tvusec)};
 }
 static NSArray *scan(void) {
     pid_t *pids=calloc(MAX_PIDS,sizeof(pid_t));

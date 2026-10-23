@@ -22,6 +22,7 @@ python3 scripts/build.py --qa
 python3 tests/integration_peer.py
 python3 tests/integration_authority.py
 python3 tests/integration_system_enforcement.py
+python3 tests/integration_trusted_sessions.py
 python3 tests/integration_runtime.py
 ```
 

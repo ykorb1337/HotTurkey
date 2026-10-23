@@ -9,7 +9,7 @@ from unittest.mock import patch
 from hotturkey.authority import PolicyAuthority
 from hotturkey.authority_server import AuthorityServer
 from hotturkey.store import Store
-from hotturkey.system_enforcement import SystemDecisions
+from hotturkey.system_enforcement import SystemDecisions,SystemExecution
 from test_authority import Clock,account
 
 
@@ -93,6 +93,20 @@ class SystemDecisionsTests(unittest.TestCase):
         self.block()
         with patch('hotturkey.system_enforcement.MAX_PROCESSES',0),self.assertRaises(ValueError):self.decisions.consume(sample([process()]))
         with patch('hotturkey.system_enforcement.MAX_KILLS',1),self.assertRaises(ValueError):self.decisions.consume(sample([process(),process(900002,token='b')]))
+    def test_session_inventory_is_fresh_account_scoped_and_copied(self):
+        execution=SystemExecution(self.authority,'unused')
+        execution.inventory={501:[process()],502:[process(900002,502,'b')]}
+        self.assertEqual(execution.applications(501),[])
+        execution.state='running';execution.last_sample=100
+        with patch('hotturkey.system_enforcement.time.monotonic',return_value=102):
+            apps=execution.applications(501);self.assertEqual([a['uid'] for a in apps],[501])
+            apps[0]['uid']=0;self.assertEqual(execution.applications(501)[0]['uid'],501)
+        with patch('hotturkey.system_enforcement.time.monotonic',return_value=104):self.assertEqual(execution.applications(501),[])
+    def test_invalid_start_fields_rejected_before_policy_changes(self):
+        self.block();before=copy.deepcopy(self.store.state)
+        for fields in [{'start_sec':True},{'start_usec':1000000},{'start_sec':-1}]:
+            with self.subTest(fields=fields),self.assertRaises(ValueError):self.decisions.consume(sample([{**process(),**fields}]))
+            self.assertEqual(self.store.state,before)
     def test_executor_failure_stops_server_and_cleans_socket(self):
         class Failed:
             def run(self,stop):raise RuntimeError('Do not expose executable paths')

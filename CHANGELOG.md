@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add a separate hardened native session agent for actual console, foreground,
+  idle and wake/session-active observations. Protected RPC attests distinct
+  client/session code roles; management clients cannot submit usage and session
+  agents cannot manage policy. Production authority configuration is now v2
+  with distinct pinned requirements for both roles.
+- Cross-check foreground UID, process start time and executable against fresh
+  kernel inventory. Reject replay/concurrent agents, skip idle and missing
+  intervals, bound usage by server monotonic elapsed time, persist login
+  identity across agent restart, and isolate background strict usage from
+  focus rewards. These are unreleased system-mode components, not installed by
+  the current-user application.
+
 - Connect the experimental protected policy authority to an independent kernel process scanner/executor. Revalidate UID, process start and executable identity before signaling; preserve locks and per-account policy, record acknowledged actions, and stop the authority on executor failure for supervisor recovery.
 - Add real signed-RPC execution tests using current-UID-only fixtures, including same-PID exec changes, malformed command batches, SIGTERM/SIGKILL, crash/restart and unrelated processes. No system daemon is installed or enabled by the current-user application.
 

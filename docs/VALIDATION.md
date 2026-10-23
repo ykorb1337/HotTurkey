@@ -128,8 +128,24 @@ In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, a
 
 ## Protected kernel execution foundation (unreleased)
 
+The current source additionally has a separately attested native session agent.
+Run `python3 tests/integration_trusted_sessions.py` after the QA build for passive
+console/foreground/idle sampling through real signed IPC, kernel audit-session
+decoding, role separation, restart markers and wrong-server rejection. Local
+GUI observations are recorded only as aggregate counts in ignored
+`build/trusted-session-proof.json`; no app names, paths or installed rules are
+published. This does not install a privileged daemon or prove real sleep/wake,
+cross-account behavior or foreground allowance expiry.
+
+Fifteen added unit tests cover trusted session roles, root-measured usage,
+replay/concurrent agents, idle/console/gap transitions, account isolation,
+kernel inventory freshness/identity, persistent login markers, monotonic caps
+and strict background reward boundaries. The complete source suite now has
+243 Python tests; browser checks remain 121. These counts describe the source,
+not the unchanged v0.3.0 release assets.
+
 The source now connects the experimental authority to an independent libproc-based executor. Fourteen new decision/lifecycle tests cover kernel-derived account contexts, selected/all-user scope, per-UID allowance ledgers, locked additions, protected paths, changing process identities, acknowledged statistics, malformed/oversized frames and authority shutdown on executor failure. Full local regression: **228 Python tests passed** with system Python 3.9.6.
 
 `tests/integration_system_enforcement.py` was run with the app's bundled Python 3.13 and the current-UID-only native QA executor. It verifies actual kernel UID/PID data; wrong UID/generation rejection; the same PID replacing its executable without accepting a stale instruction; rejection of a malformed batch before any action; and the production executable refusing unprivileged launch. Real signed policy RPC drives the executor, including appending a unique binary target to a locked rule, SIGTERM termination, SIGKILL after a fixture ignores SIGTERM, unrelated fixtures surviving, successful-signal statistics, preserved lock/start state, executor-crash shutdown and authority restart with enforcement restored. The RPC also rejects direct kill commands and client-supplied usage/process samples. Evidence: `build/system-execution-proof.json`.
 
-This uses disposable databases/sockets and test-created programs. It does not install a root daemon, modify the released current-user service, signal user applications or test a second real macOS account. The production binary is packaged; the QA binary is excluded. Foreground/idle sampling, browser/session agents, device actions, complete manager APIs, privileged installation/migration and actual cross-account enforcement remain open. The system-mode component is not offered as complete anti-tamper protection; see [the current boundary](SYSTEM-SERVICE.md).
+This uses disposable databases/sockets and test-created programs. It does not install a root daemon, modify the released current-user service, signal user applications or test a second real macOS account. Production helpers are packaged; QA binaries are excluded. Browser integration, session-agent supervision, device actions, complete manager APIs, privileged installation/migration and actual cross-account enforcement remain open. The system-mode component is not offered as complete anti-tamper protection; see [the current boundary](SYSTEM-SERVICE.md).

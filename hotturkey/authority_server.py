@@ -3,7 +3,8 @@
 Not registered by the current-user installer. Production startup requires root,
 pre-existing protected paths and a root-selected native client requirement.
 Process enforcement uses a protected kernel scanner, never a client PID list.
-Session usage, browser integration and privileged installation remain open.
+Session usage has a separately attested native source. Browser integration and
+privileged installation remain open.
 """
 import errno
 import json
@@ -15,7 +16,7 @@ import threading
 from pathlib import Path
 
 from .authority import PolicyAuthority
-from .ipc import (ProtocolError, authenticated_peer, receive, send,
+from .ipc import (ProtocolError, authenticated_roles, receive, send,
                   trusted_directory, trusted_path)
 from .model import PolicyError
 from .store import Store
@@ -39,10 +40,13 @@ def _text(value, limit, label):
 
 
 class PolicyRPC:
-    def __init__(self, authority, execution=None):self.authority=authority;self.execution=execution
+    def __init__(self, authority, execution=None, sessions=None):
+        self.authority=authority;self.execution=execution;self.sessions=sessions
 
     def dispatch(self, identity, request):
-        # No UID, PID, role, path or executable is ever accepted from the wire.
+        # Peer identity/role always comes from the kernel and code verifier.
+        # Only the session operation accepts foreground claims, cross-checked
+        # against the independent executor inventory before any usage is earned.
         if set(request)-{'op','data','session'}:raise PolicyError('请求字段无效')
         operation=_text(request.get('op'),32,'操作')
         data=request.get('data',{})
@@ -51,9 +55,14 @@ class PolicyRPC:
         uid=identity.uid
         self.authority._account(uid)
         with self.authority.store.lock:
+            if identity.role=='session':
+                if operation!='session-sample' or session or self.sessions is None:raise PolicyError('会话代理只可提交采样')
+                return self.sessions.consume(identity,data)
+            if identity.role!='client' or operation=='session-sample':raise PolicyError('操作身份无效')
             if operation=='snapshot':
                 value=self.authority.snapshot(uid,session)
                 value['system_execution']=self.execution.status() if self.execution else {'status':'not-connected'}
+                value['system_session']=self.sessions.status(uid) if self.sessions else {'status':'not-connected'}
                 return value
             if operation=='authenticate':
                 if set(data)!={'password'}:raise PolicyError('验证字段无效')
@@ -94,13 +103,13 @@ class AuthorityServer:
     """One authenticated request per connection, at most eight active workers.
 
     A verifier is explicitly injected for isolated tests. Production constructs
-    it only after checking root ownership and uses authenticated_peer.
+    it only after checking root ownership and uses authenticated_roles.
     """
-    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1, execution=None):
+    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1, execution=None, sessions=None):
         if type(workers) is not int or not 1<=workers<=32:raise ValueError('Invalid worker count')
         self.authority=authority
         self.execution=execution
-        self.rpc=PolicyRPC(authority,execution)
+        self.rpc=PolicyRPC(authority,execution,sessions)
         self.path=Path(path)
         self.verifier=verifier
         self.slots=threading.BoundedSemaphore(workers)
@@ -228,15 +237,18 @@ def production_server():
     config_path=trusted_path(CONFIG)
     if config_path.stat().st_size>16384:raise ValueError('Authority configuration too large')
     config=json.loads(config_path.read_text())
-    if set(config)!={'version','controller_uid','client_requirement'} or config['version']!=1:
+    if set(config)!={'version','controller_uid','requirements'} or config['version']!=2:
         raise ValueError('Unsupported authority configuration')
-    requirement=config['client_requirement']
+    requirements=config['requirements']
     # This local unsigned distribution pins a specific hardened native client.
     import re
-    if not isinstance(requirement,str) or not re.fullmatch(r'cdhash H"[0-9a-f]{40}"',requirement):
-        raise ValueError('Expected a pinned native client requirement')
+    if (not isinstance(requirements,dict) or set(requirements)!={'client','session'}
+            or any(not isinstance(value,str) or not re.fullmatch(r'cdhash H"[0-9a-f]{40}"',value) for value in requirements.values())
+            or len(set(requirements.values()))!=2):
+        raise ValueError('Expected distinct pinned native role requirements')
     checker=trusted_path(INSTALL/'HotTurkeyPeerCheck')
     executor=trusted_path(INSTALL/'HotTurkeySystemAgent')
+    trusted_path(INSTALL/'HotTurkeySessionAgent')
     trusted_directory(DATA)
     trusted_directory(SOCKET.parent)
     for path in DATA.iterdir():
@@ -250,7 +262,9 @@ def production_server():
         authority.engine(authority.controller_uid)
         from .system_enforcement import SystemExecution
         execution=SystemExecution(authority,executor,protected_paths=[INSTALL])
-        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_peer(connection,checker,requirement),execution=execution)
+        from .trusted_sessions import TrustedSessions
+        sessions=TrustedSessions(authority,execution)
+        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_roles(connection,checker,requirements),execution=execution,sessions=sessions)
     except BaseException:
         store.db.close()
         raise

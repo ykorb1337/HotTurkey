@@ -1,7 +1,8 @@
 """Protected process decisions using kernel samples, never client-reported PIDs.
 
-The current-user installer does not enable this service. Foreground/idle usage,
-browser heartbeats and device actions still need trusted session integration.
+The current-user installer does not enable this service. Fresh inventory can
+verify a native session agent's foreground identity. Browser/device integration
+and privileged installation remain separate work.
 """
 import os
 import re
@@ -59,6 +60,8 @@ class SystemDecisions:
                 if not isinstance(app.get(key),str) or len(app[key])>4096:raise ValueError('Invalid process metadata')
             if not app['executable'].startswith('/') or not app['path'].startswith('/'):
                 raise ValueError('Invalid executable path')
+            for key,maximum in [('start_sec',2**53),('start_usec',999999)]:
+                if key in app and (type(app[key]) is not int or not 0<=app[key]<=maximum):raise ValueError('Invalid process start time')
         acknowledgements=set()
         for result in results:
             pid,uid,token=process_identity(result)
@@ -107,6 +110,12 @@ class SystemExecution:
         self.process=None
         self.last_sample=None
         self.state='not-started'
+        self.inventory={}
+
+    def applications(self,uid):
+        with self.authority.store.lock:
+            if self.state!='running' or self.last_sample is None or time.monotonic()-self.last_sample>3:return []
+            return [dict(app) for app in self.inventory.get(uid,())]
 
     def status(self):
         with self.authority.store.lock:
@@ -122,6 +131,8 @@ class SystemExecution:
                 command=decisions.consume(sample)
                 if not native_command(process,stop,command):break
                 with self.authority.store.lock:
+                    self.inventory={}
+                    for app in sample['apps']:self.inventory.setdefault(app['uid'],[]).append(dict(app))
                     self.last_sample=time.monotonic();self.state='running'
             if not stop.is_set():raise RuntimeError('Protected executor exited')
         except BaseException:

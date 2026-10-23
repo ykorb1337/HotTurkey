@@ -34,6 +34,7 @@ class PeerIdentity:
     gid:int
     pid:int
     audit_token:bytes
+    role:str='client'
 
 
 def peer_identity(connection):
@@ -144,3 +145,20 @@ def authenticated_peer(connection, checker, requirement):
     except (ValueError,AttributeError):valid=False
     if not valid:raise PermissionError('Peer code identity was not approved')
     return identity
+
+
+def authenticated_roles(connection,checker,requirements):
+    """The protected configuration selects roles, never the caller's JSON."""
+    if set(requirements)!={'client','session'} or len(set(requirements.values()))!=2:
+        raise ValueError('Distinct client and session requirements are required')
+    identity=peer_identity(connection)
+    executable=trusted_path(checker)
+    result=subprocess.run([str(executable),'--audit',base64.b64encode(identity.audit_token).decode(),
+                           '--roles',json.dumps(requirements)],capture_output=True,text=True,timeout=3,
+                          env={'PATH':'/usr/bin:/bin'})
+    try:
+        value=json.loads(result.stdout)
+        valid=result.returncode==0 and value.get('ok') is True and value.get('role') in requirements
+    except (ValueError,AttributeError):valid=False
+    if not valid:raise PermissionError('Peer code role was not approved')
+    return dataclasses.replace(identity,role=value['role'])
