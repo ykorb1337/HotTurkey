@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Connect the experimental protected policy authority to an independent kernel process scanner/executor. Revalidate UID, process start and executable identity before signaling; preserve locks and per-account policy, record acknowledged actions, and stop the authority on executor failure for supervisor recovery.
+- Add real signed-RPC execution tests using current-UID-only fixtures, including same-PID exec changes, malformed command batches, SIGTERM/SIGKILL, crash/restart and unrelated processes. No system daemon is installed or enabled by the current-user application.
+
 ## 0.3.0 — 2026-10-22
 
 - Append the current domain or path from the extension toolbar popup to an existing rule, including locked rules. Preview the target, respect the settings password, and preserve the original rule configuration. Queries and fragments are not saved.

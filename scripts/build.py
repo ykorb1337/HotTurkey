@@ -32,6 +32,9 @@ def main():
         subprocess.run(command,check=True)
         if name in {"HotTurkeyAgent","HotTurkeyPeerCheck","HotTurkeyPeerFixture","HotTurkeyPolicyClient","HotTurkeyPolicyClientQA"}:
             subprocess.run(["/usr/bin/codesign","--force","--options","runtime","--sign","-",str(BUILD/name)],check=True)
+    for name,flags in [('HotTurkeySystemAgent',[])]+([('HotTurkeySystemAgentQA',['-DHOTTURKEY_QA'])] if args.qa else []):
+        subprocess.run(['/usr/bin/clang','-fobjc-arc','-O2','-Wall','-Wextra','-Werror','-mmacosx-version-min=12.0','-framework','Foundation',*flags,str(ROOT/'native/SystemAgent.m'),'-o',str(BUILD/name)],check=True)
+        subprocess.run(['/usr/bin/codesign','--force','--options','runtime','--sign','-',str(BUILD/name)],check=True)
     app=BUILD/"HotTurkey.app/Contents"
     (app/"MacOS").mkdir(parents=True,exist_ok=True)
     resources=app/"Resources";resources.mkdir(exist_ok=True)
@@ -46,6 +49,7 @@ def main():
     shutil.copy2(BUILD/"HotTurkeyAgent",project/"build/HotTurkeyAgent")
     shutil.copy2(BUILD/"HotTurkeyPeerCheck",project/"build/HotTurkeyPeerCheck")
     shutil.copy2(BUILD/"HotTurkeyPolicyClient",project/"build/HotTurkeyPolicyClient")
+    shutil.copy2(BUILD/'HotTurkeySystemAgent',project/'build/HotTurkeySystemAgent')
     python=resources/'python'
     third_party=resources/'ThirdParty/Python'
     if python.exists():shutil.rmtree(python)

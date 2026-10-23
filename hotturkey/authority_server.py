@@ -2,8 +2,8 @@
 
 Not registered by the current-user installer. Production startup requires root,
 pre-existing protected paths and a root-selected native client requirement.
-Only policy operations are exposed; usage and process enforcement are not yet
-connected, so this service alone is not an anti-tamper implementation.
+Process enforcement uses a protected kernel scanner, never a client PID list.
+Session usage, browser integration and privileged installation remain open.
 """
 import errno
 import json
@@ -39,7 +39,7 @@ def _text(value, limit, label):
 
 
 class PolicyRPC:
-    def __init__(self, authority):self.authority=authority
+    def __init__(self, authority, execution=None):self.authority=authority;self.execution=execution
 
     def dispatch(self, identity, request):
         # No UID, PID, role, path or executable is ever accepted from the wire.
@@ -51,7 +51,10 @@ class PolicyRPC:
         uid=identity.uid
         self.authority._account(uid)
         with self.authority.store.lock:
-            if operation=='snapshot':return self.authority.snapshot(uid,session)
+            if operation=='snapshot':
+                value=self.authority.snapshot(uid,session)
+                value['system_execution']=self.execution.status() if self.execution else {'status':'not-connected'}
+                return value
             if operation=='authenticate':
                 if set(data)!={'password'}:raise PolicyError('验证字段无效')
                 return {'session':self.authority.authenticate(uid,_text(data['password'],4096,'密码'))}
@@ -93,10 +96,11 @@ class AuthorityServer:
     A verifier is explicitly injected for isolated tests. Production constructs
     it only after checking root ownership and uses authenticated_peer.
     """
-    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1):
+    def __init__(self, authority, path, verifier, *, workers=8, tick_interval=1, execution=None):
         if type(workers) is not int or not 1<=workers<=32:raise ValueError('Invalid worker count')
         self.authority=authority
-        self.rpc=PolicyRPC(authority)
+        self.execution=execution
+        self.rpc=PolicyRPC(authority,execution)
         self.path=Path(path)
         self.verifier=verifier
         self.slots=threading.BoundedSemaphore(workers)
@@ -173,10 +177,22 @@ class AuthorityServer:
                 self.failure='Policy clock failed'
                 self.stopping.set()
 
+    def _execute(self):
+        try:
+            self.execution.run(self.stopping)
+            if not self.stopping.is_set():raise RuntimeError('Protected executor returned')
+        except Exception:
+            self.failure='Protected process enforcement failed'
+            self.stopping.set()
+
     def serve_forever(self):
         if self.listener is None:raise RuntimeError('Bind before serving')
         ticker=threading.Thread(target=self._tick,name='policy-clock',daemon=True)
         ticker.start()
+        executor=None
+        if self.execution:
+            executor=threading.Thread(target=self._execute,name='protected-executor',daemon=True)
+            executor.start()
         try:
             while not self.stopping.is_set():
                 if not self.slots.acquire(timeout=.2):continue
@@ -193,6 +209,7 @@ class AuthorityServer:
             self.stopping.set()
             self.listener.close()
             ticker.join()
+            if executor:executor.join()
             # Each worker has bounded verifier, read and write deadlines.
             with self.worker_lock:workers=list(self.workers)
             for worker in workers:worker.join()
@@ -219,6 +236,7 @@ def production_server():
     if not isinstance(requirement,str) or not re.fullmatch(r'cdhash H"[0-9a-f]{40}"',requirement):
         raise ValueError('Expected a pinned native client requirement')
     checker=trusted_path(INSTALL/'HotTurkeyPeerCheck')
+    executor=trusted_path(INSTALL/'HotTurkeySystemAgent')
     trusted_directory(DATA)
     trusted_directory(SOCKET.parent)
     for path in DATA.iterdir():
@@ -230,7 +248,9 @@ def production_server():
         from .platform_macos import boot_id
         authority=PolicyAuthority(store,config['controller_uid'],boot_id=boot_id())
         authority.engine(authority.controller_uid)
-        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_peer(connection,checker,requirement))
+        from .system_enforcement import SystemExecution
+        execution=SystemExecution(authority,executor,protected_paths=[INSTALL])
+        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_peer(connection,checker,requirement),execution=execution)
     except BaseException:
         store.db.close()
         raise

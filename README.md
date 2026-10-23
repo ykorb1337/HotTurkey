@@ -159,3 +159,5 @@ HotTurkey 自有代码按 [MIT License](LICENSE) 开源；第三方组件遵循�
 The toolbar popup can append the current domain or path to an existing rule, including a locked rule. It respects the settings password, preserves exceptions/timers/toggles, and does not save URL queries or fragments. The real Edge domain flow has been tested; path/password UI flows were tested with explicit browser API doubles and real Native Messaging.
 
 Interface size is adjustable from 50–200% in Settings, with Command/Ctrl plus/minus or scrolling, and star/zero reset. The size is saved locally. Dialogs and navigation adapt to the effective viewport, and calendar dragging uses scaled coordinates. Native keyboard and 150% calendar interactions have been tested; native mouse gestures remain unverified.
+
+The unreleased protected-service foundation now connects signed policy RPC to a kernel process executor, with isolated real-process tests. It is not enabled by the current-user installer. Trusted session activity, browser integration, privileged installation/migration and real separate-account validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
