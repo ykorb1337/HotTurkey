@@ -1,9 +1,11 @@
 """Real signed parent/host/RPC with disposable data, never a user's browser."""
 import base64
+import collections
 import dataclasses
 import json
 import os
 import selectors
+import shutil
 import socket
 import struct
 import subprocess
@@ -59,6 +61,11 @@ def main():
             role=json.loads(result.stdout)['role'];identity=dataclasses.replace(identity,role=role);observed.append(identity)
             return identity
         server=AuthorityServer(authority,path,verify,execution=execution,sessions=sessions,browsers=browsers,tick_interval=.2)
+        counts=collections.Counter();original=server.rpc.dispatch
+        def dispatch(identity,request):
+            counts[request.get('op')]+=1
+            return original(identity,request)
+        server.rpc.dispatch=dispatch
         server.bind();errors=[]
         def serve():
             try:server.serve_forever()
@@ -126,6 +133,15 @@ def main():
                 length=struct.unpack('<I',exact(wrong.stdout,4))[0]
                 assert 'error' in json.loads(exact(wrong.stdout,length))
             proof['wrong_server_uid_receives_no_password']='PASS'
+            authority.manage(os.getuid(),'save',{'block':{'name':'Large browser transport','enabled':True,
+                'websites':[f'https://bulk.invalid/{i}/'+'星'*110 for i in range(4000)]}})
+            node=os.environ.get('HOTTURKEY_TEST_NODE') or shutil.which('node')
+            assert node,'Set HOTTURKEY_TEST_NODE to a Node.js executable'
+            result=subprocess.run([node,str(ROOT/'tests/native_browser_documents.cjs'),str(fixture),str(host),str(config),str(path),str(os.getuid()),origin],capture_output=True,text=True,timeout=45)
+            assert result.returncode==0,result.stderr
+            transfer=json.loads(result.stdout);assert transfer['large_browser_policy_JS_decoder'] and transfer['all_native_frames_bounded'] and counts['document-start']>0
+            assert transfer['old_decoder_upgrade_response'] and not server.rpc.documents.records
+            proof.update(large_browser_policy_in_actual_JS_decoder='PASS',large_browser_input_uploaded='PASS',native_response_frames_within_one_MiB='PASS')
         finally:
             for process in processes:
                 if process.stdin and not process.stdin.closed:process.stdin.close()

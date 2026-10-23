@@ -2,8 +2,10 @@
 // Each entry point fixes its own production socket and expected server UID.
 import Foundation
 import Darwin
+import CryptoKit
 
 let maximumFrame=1024*1024
+let maximumDocument=64*1024*1024
 let timeoutNanoseconds:UInt64=5_000_000_000
 enum BridgeError:Error { case invalid, transport, identity }
 
@@ -87,4 +89,65 @@ func request(_ payload:Data,path:String,serverUID:uid_t) throws -> Data {
     let response=try readExact(fd,Int(count),deadline)
     guard (try JSONSerialization.jsonObject(with:response)) is [String:Any] else { throw BridgeError.invalid }
     return response
+}
+
+func object(_ data:Data) throws -> [String:Any] {
+    guard let value=try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw BridgeError.invalid }
+    return value
+}
+
+// Uploads execute only after complete integrity verification. Responses stay
+// framed; the stdio client resolves them, while Native Messaging resolves at
+// the extension boundary to preserve the browser's one-MiB response limit.
+func documentRequest(_ payload:Data,path:String,serverUID:uid_t,resolve:Bool=true,beforeEach:() throws -> Void={}) throws -> Data {
+    guard payload.count<=maximumDocument else { throw BridgeError.invalid }
+    let original=try object(payload),session=original["session"] as? String ?? ""
+    func exchange(_ value:[String:Any]) throws -> Data {
+        try beforeEach()
+        return try request(JSONSerialization.data(withJSONObject:value),path:path,serverUID:serverUID)
+    }
+    var response:Data
+    if payload.count<=maximumFrame {
+        try beforeEach();response=try request(payload,path:path,serverUID:serverUID)
+    } else {
+        guard let operation=original["op"] as? String else { throw BridgeError.invalid }
+        let hash=SHA256.hash(data:payload).map { String(format:"%02x",$0) }.joined()
+        let start=try exchange(["op":"document-start","session":session,"data":["operation":operation,"size":payload.count,"sha256":hash]])
+        let value=try object(start)
+        guard value["ok"] as? Bool==true else { return start }
+        guard let info=value["result"] as? [String:Any],let token=info["id"] as? String,token.count<=128,
+              let chunk=info["chunk_size"] as? Int,(1...262144).contains(chunk) else { throw BridgeError.invalid }
+        var offset=0
+        while offset<payload.count {
+            let end=min(offset+chunk,payload.count)
+            let part=try exchange(["op":"document-chunk","session":session,"data":["id":token,"offset":offset,"data":payload[offset..<end].base64EncodedString()]])
+            let answer=try object(part)
+            guard answer["ok"] as? Bool==true else { return part }
+            guard let result=answer["result"] as? [String:Any],result["next"] as? Int==end else { throw BridgeError.invalid }
+            offset=end
+        }
+        response=try exchange(["op":"document-finish","session":session,"data":["id":token]])
+    }
+    guard resolve else { return response }
+    let first=try object(response)
+    guard first["ok"] as? Bool==true,let page=first["result"] as? [String:Any],page["__hotturkey_document__"] != nil else { return response }
+    guard let meta=page["__hotturkey_document__"] as? [String:Any],let token=meta["id"] as? String,token.count<=128,
+          let size=meta["size"] as? Int,(1...maximumDocument).contains(size),let hash=meta["sha256"] as? String,hash.count==64 else { throw BridgeError.invalid }
+    var current=page,bytes=Data()
+    while true {
+        guard let same=current["__hotturkey_document__"] as? [String:Any],same["id"] as? String==token,
+              same["sha256"] as? String==hash,same["size"] as? Int==size,current["offset"] as? Int==bytes.count,
+              let encoded=current["data"] as? String,let part=Data(base64Encoded:encoded),!part.isEmpty,
+              part.count<=262144,bytes.count+part.count<=size else { throw BridgeError.invalid }
+        bytes.append(part)
+        if current["next"] is NSNull { guard bytes.count==size else { throw BridgeError.invalid };break }
+        guard let next=current["next"] as? Int,next==bytes.count,next<size else { throw BridgeError.invalid }
+        let answer=try exchange(["op":"document-read","session":session,"data":["id":token,"offset":next]])
+        let value=try object(answer)
+        guard value["ok"] as? Bool==true else { return answer }
+        guard let nextPage=value["result"] as? [String:Any] else { throw BridgeError.invalid };current=nextPage
+    }
+    guard SHA256.hash(data:bytes).map({ String(format:"%02x",$0) }).joined()==hash else { throw BridgeError.invalid }
+    let result=try JSONSerialization.jsonObject(with:bytes,options:[.fragmentsAllowed])
+    return try JSONSerialization.data(withJSONObject:["ok":true,"result":result],options:[.withoutEscapingSlashes])
 }

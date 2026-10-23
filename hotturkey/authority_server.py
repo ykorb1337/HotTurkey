@@ -16,6 +16,8 @@ import threading
 from pathlib import Path
 
 from .authority import PolicyAuthority
+from .authority_management import AuthorityManagement,FIELDS as MANAGEMENT_API
+from .documents import Documents
 from .ipc import (ProtocolError, authenticated_roles, receive, send,
                   trusted_directory, trusted_path)
 from .model import PolicyError
@@ -42,8 +44,69 @@ def _text(value, limit, label):
 class PolicyRPC:
     def __init__(self, authority, execution=None, sessions=None, browsers=None):
         self.authority=authority;self.execution=execution;self.sessions=sessions;self.browsers=browsers
+        self.management=AuthorityManagement(authority)
+        self.documents=Documents(authority.clock)
 
     def dispatch(self, identity, request):
+        with self.authority.store.lock:
+            if not isinstance(request,dict):raise PolicyError('请求内容无效')
+            operation=_text(request.get('op'),32,'操作');session=_text(request.get('session',''),128,'会话')
+            if operation in {'document-read','document-cancel','document-start','document-chunk','document-finish'}:
+                result=self.document_request(identity,request)
+            else:result=self._dispatch(identity,request)
+            if identity.role=='session':return result
+            return self.documents.pack(identity,operation,session,result)
+
+    def document_access(self,identity,operation,session):
+        uid=identity.uid;self.authority._account(uid)
+        if identity.role=='browser':
+            if operation!='browser-request' or session:raise PolicyError('浏览器传输权限无效')
+            return
+        if identity.role!='client':raise PolicyError('传输身份无效')
+        if operation=='snapshot':
+            if self.authority.store.state['settings']['protect_overview'] and not self.authority.authenticated(uid,session):raise PolicyError('规则概览已受保护')
+            return
+        if operation in MANAGEMENT_API:return self.management.authorize(uid,operation,session)
+        if operation in MANAGEMENT:
+            if uid!=self.authority.controller_uid or not self.authority.authenticated(uid,session):raise PolicyError('需要管理账户验证')
+            return
+        if operation not in {'check','break'}:raise PolicyError('传输操作无效')
+
+    def document_request(self,identity,request):
+        if set(request)-{'op','data','session'}:raise PolicyError('传输请求无效')
+        operation=request['op'];data=request.get('data',{});session=request.get('session','')
+        if not isinstance(data,dict) or not isinstance(session,str) or len(session)>128:raise PolicyError('传输内容无效')
+        if operation=='document-start':
+            if set(data)!={'operation','size','sha256'}:raise PolicyError('上传字段无效')
+            target=data['operation']
+            allowed={'save','add-targets','import'} if identity.role=='client' else {'browser-request'} if identity.role=='browser' else set()
+            if not isinstance(target,str) or target not in allowed:raise PolicyError('上传操作无效')
+            self.document_access(identity,target,session)
+            return self.documents.start(identity,target,session,data['size'],data['sha256'])
+        mode='read' if operation in {'document-read','document-cancel'} else 'write'
+        record=self.documents.record(identity,data.get('id'),mode)
+        try:self.document_access(identity,record['operation'],record['session'])
+        except PolicyError:
+            self.documents.records.pop(data.get('id'),None)
+            raise
+        if session!=record['session']:raise PolicyError('传输验证会话不符')
+        if operation=='document-cancel':
+            if set(data)!={'id'}:raise PolicyError('取消字段无效')
+            del self.documents.records[data['id']]
+            return {'ok':True}
+        if operation=='document-read':
+            if set(data)!={'id','offset'}:raise PolicyError('分页字段无效')
+            return self.documents.page(identity,data['id'],data['offset'])
+        if operation=='document-chunk':
+            if set(data)!={'id','offset','data'}:raise PolicyError('上传字段无效')
+            return self.documents.append(identity,data['id'],data['offset'],data['data'])
+        if set(data)!={'id'}:raise PolicyError('上传结束字段无效')
+        original=self.documents.finish(identity,data['id'])
+        result=self._dispatch(identity,original)
+        # The result belongs to the actual operation, not the upload wrapper.
+        return self.documents.pack(identity,original['op'],original.get('session',''),result)
+
+    def _dispatch(self, identity, request):
         # Peer identity/role always comes from the kernel and code verifier.
         # Separate native roles submit session/browser claims, cross-checked
         # against independent executor inventory before any usage is earned.
@@ -62,6 +125,7 @@ class PolicyRPC:
                 if operation!='session-sample' or session or self.sessions is None:raise PolicyError('会话代理只可提交采样')
                 return self.sessions.consume(identity,data)
             if identity.role!='client' or operation=='session-sample':raise PolicyError('操作身份无效')
+            if operation in MANAGEMENT_API:return self.management.dispatch(uid,operation,data,session)
             if operation=='snapshot':
                 value=self.authority.snapshot(uid,session)
                 value['system_execution']=self.execution.status() if self.execution else {'status':'not-connected'}
@@ -183,6 +247,7 @@ class AuthorityServer:
         while not self.stopping.wait(self.tick_interval):
             try:
                 with self.authority.store.lock:
+                    self.rpc.documents.prune()
                     # No JSON-provided IDs create ticking account contexts.
                     for engine in list(self.authority.engines.values()):engine.tick()
             except Exception:

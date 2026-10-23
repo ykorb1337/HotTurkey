@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Complete protected management RPC for settings, duplicate/import/export,
+  categories, user catalogs and account-scoped statistics. Add `--system` CLI
+  routing through the fixed protected native client. Desktop system-mode
+  routing and privileged installation remain pending.
+- Transfer large policy/statistics documents in bounded chunks with a frozen
+  snapshot, SHA-256 verification, kernel peer binding and expiring buffers.
+  Native clients and the extension resolve complete results before exposing
+  them; imports commit only after the complete upload has been verified.
+  The existing current-user Native Messaging host also pages large responses.
+  Older decoders get a bounded update response; invalid Unicode is rejected
+  before any policy mutation.
+- Preview imported rules and default automatic starts off. Preserve automatic
+  plans only by explicit choice, with separate confirmation for device actions.
+  Password rotation revokes old management sessions. Preserve target ordering
+  while avoiding quadratic list deduplication.
+
 - Add an original turkey icon across the macOS app, web interface and browser
   extension. Generate SVG, multi-resolution PNG and ICNS from one editable
   vector source; retain transparent macOS padding and small-size rendering.
@@ -16,8 +32,8 @@
 - Add a separate hardened native session agent for actual console, foreground,
   idle and wake/session-active observations. Protected RPC attests distinct
   client/session code roles; management clients cannot submit usage and session
-  agents cannot manage policy. Production authority configuration is now v2
-  with distinct pinned requirements for both roles.
+  agents cannot manage policy. Production authority configuration is now v3
+  with distinct pinned client, session and browser-host role requirements.
 - Cross-check foreground UID, process start time and executable against fresh
   kernel inventory. Reject replay/concurrent agents, skip idle and missing
   intervals, bound usage by server monotonic elapsed time, persist login

@@ -128,6 +128,39 @@ In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, a
 
 ## Protected kernel execution foundation (unreleased)
 
+Latest management milestone: **288 Python tests and 142 browser checks**.
+Protected settings, duplicate/import/export, account-scoped statistics and CLI
+routing now have tests in addition to the previous native/session/browser
+foundation. Settings updates are atomic, lock strictness remains protected,
+password rotation revokes sessions and clearing statistics leaves charges.
+
+`tests/integration_management.py` verifies real signed upload/read-back of over
+one MiB of Unicode targets, immutable result pages, large locked additions,
+imports/exports, duplication, paged statistics and corrupt-result rejection.
+An abandoned upload cannot be resumed by a new process and never changes
+policy. The browser signed-fixture integration now also passes an over-one-MiB
+request and 4,000 Unicode targets through the actual extension decoder while
+all host response frames stay below one MiB. These use disposable services;
+they do not prove real browser engine behavior or root installation.
+
+`integration_legacy_documents.py` runs the ordinary Python Native Messaging
+host against a disposable current-user service and the same actual JavaScript
+decoder. It also verifies large request upload, 4,000 Unicode targets and the
+one-MiB response bound. This path remains unprivileged and has no parent-code
+attestation; no installed browser or production rules are used.
+
+The import UI now previews names and leaves automatic starts unchecked by
+default. Retaining device plans requires a separate confirmation. Six DOM/API
+double checks verify escaping, cancellation, preserved drafts and confirmation;
+this new preview has not yet had a native-window interaction test. The shared
+HTTP and protected validators verify imports are inactive by default. UI/CLI
+also neutralize automatic starts before sending to an older backend.
+
+Native Messaging paging is capability-negotiated. Older decoders receive a
+bounded reload/update response for oversized policy; protected read cursors
+are canceled rather than left allocated. Invalid Unicode surrogate input is
+rejected before policy mutation. Existing small-message behavior is preserved.
+
 The latest source adds a restricted native browser host. Fifteen browser tests
 cover roles, parent UID/start/bundle checks, replay, batch validation, native
 foreground/idle gating, audible tabs, clock/gap bounds, account policy filtering,

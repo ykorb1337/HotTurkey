@@ -16,12 +16,12 @@ struct PolicyClientMain {
             // Read once per process, bounded even if a caller streams oversized input.
             var payload=Data()
             while true {
-                let part=FileHandle.standardInput.readData(ofLength:min(65536,maximumFrame+1-payload.count))
+                let part=FileHandle.standardInput.readData(ofLength:min(65536,maximumDocument+1-payload.count))
                 if part.isEmpty { break }
                 payload.append(part)
-                guard payload.count<=maximumFrame else { throw BridgeError.invalid }
+                guard payload.count<=maximumDocument else { throw BridgeError.invalid }
             }
-            let response=try request(payload,path:path,serverUID:serverUID)
+            let response=try documentRequest(payload,path:path,serverUID:serverUID)
             FileHandle.standardOutput.write(response);FileHandle.standardOutput.write(Data([10]))
         } catch {
             // The caller receives neither credentials nor filesystem details in errors.

@@ -137,7 +137,8 @@ class TrustedBrowsers:
         now=self.authority.clock();context=data['context'];activity=self.sessions.activity(uid)
         settings=self.authority.store.state['settings'];rules=self.authority.store.state['blocks']
         engine.heartbeats[browser]={'at':engine.now(),'incognito':data.get('incognito_allowed',False),'files':data.get('files_allowed',False)}
-        hit_ids={b['id'] for item in data.get('usage',[]) for b in rules if engine.active(b) and target_matches(b,item['url'],item.get('channels',[]))}
+        hit_ids=({b['id'] for item in data.get('usage',[]) for b in rules if engine.active(b) and target_matches(b,item['url'],item.get('channels',[]))}
+                 if settings['strict_usage'] and activity else set())
         match_key=(uid,browser,context)
         if match_key not in self.matches and sum(key[0]==uid for key in self.matches)>=256:raise PolicyError('浏览器会话过多')
         for key,value in list(self.sources.items()):

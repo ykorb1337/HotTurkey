@@ -16,7 +16,7 @@ let state, page='overview', editor=null, tab='websites', categories={}, apps=[],
 let statsSinceDate=localInput(Date.now()/1000-7*86400).slice(0,10),statsUntilDate=localInput(Date.now()/1000).slice(0,10);
 let statsRange=7, statsKind='', statsQuery='', statsUser='', statsBlock='', statsMetric='seconds', statsLimit=10;
 let filter='', calendarBlock='', scheduleDraft=null, drag=null, movedCalendar=false;
-let editorAdditions={websites:[],applications:[]},editorImport=null;
+let editorAdditions={websites:[],applications:[]},editorImport=null,importDraft=null;
 const modal=$('#modal');
 const newBlock=()=>({name:'',websites:[],exceptions:['file://*'],applications:[],users:[],enabled:false,color:'#b95636',mode:'continuous',schedule:[],break:{type:'none',work_minutes:25,break_minutes:5,allowance_minutes:30,window_minutes:60,delay_minutes:1,sessions:3,text_length:30,period:'day',refill_minute:0,custom_text:'',text_mode:'characters'},autostart:{type:'none'},device:'none',device_minutes:15});
 function options(values,selected){return Object.entries(values).map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(l)}</option>`).join('');}
@@ -32,7 +32,7 @@ function toast(message){$('#toast').textContent=message;$('#toast').classList.ad
 async function api(path,data){const response=await fetch('/api/'+path,{method:data===undefined?'GET':'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','X-HotTurkey-Session':auth},body:data===undefined?undefined:JSON.stringify(data)});const value=await response.json();if(!response.ok)throw Error(value.error||'操作失败');return value;}
 window.HotTurkeyTextSize.configure({save:value=>api('settings',{text_scale:value}),notify:message=>toast(message)});
 function openModal(title,body,actions=''){ $('#modal-body').innerHTML=`<div class="modal-head"><h2>${title}</h2>${btn('close','×','','icon-button')}</div><div class="modal-content">${body}<div id="modal-error" class="error" role="alert"></div></div><div class="modal-footer">${actions||btn('close','关闭')}</div>`; if(!modal.open)modal.showModal();}
-function closeModal(){modal.close();editor=null;scheduleDraft=null;editorImport=null;}
+function closeModal(){modal.close();editor=null;scheduleDraft=null;editorImport=null;importDraft=null;}
 function theme(){window.HotTurkeyTextSize.sync(state.settings.text_scale);const value=state.settings.theme;document.body.classList.toggle('dark',value==='dark'||(value==='system'&&matchMedia('(prefers-color-scheme: dark)').matches));}
 async function refresh(render=true){state=await api('state');theme();$('#clock').textContent=new Date(state.now*1000).toLocaleString('zh-CN',{weekday:'short',hour:'2-digit',minute:'2-digit',hour12:!state.settings.clock_24});const healthy=state.enforcement.enabled&&state.enforcement.desktop_connected&&!state.enforcement.worker_error;$('#connection').textContent=healthy?'● 本地后台正在守护':'○ '+(state.enforcement.status==='recovering'||state.enforcement.worker_error?'正在恢复拦截':state.enforcement.enabled?'正在连接执行层':'预览模式 · 未开启系统拦截');$('#connection').classList.toggle('bad',!healthy);if(render)renderPage();}
 function resetPomodoroButton(b){return b.mode==='continuous'&&b.break.type==='pomodoro'?btn('reset-pomodoro','↻ 重置番茄钟',`data-id="${b.id}" ${b.active?'':'disabled'}`,'icon-button'):'';}
@@ -143,7 +143,22 @@ async function action(a,el){const id=el.dataset.id;const b=state.blocks.find(b=>
  if(a==='break'){const result=await api('blocks/break',{id});if(result.challenge)openModal('输入文本后休息',`<div class="challenge">${esc(result.challenge)}</div>${field('请手动输入','<textarea id="break-answer" rows="3" autocomplete="off"></textarea>')}`,`${btn('close','取消')}${btn('confirm-break','开始休息',`data-id="${id}"`,'primary')}`);else toast(result.ready_at?'等待至 '+dateTime(result.ready_at):'休息已开始');return;}
  if(a==='confirm-break'){await api('blocks/break',{id,answer:$('#break-answer').value});closeModal();toast('休息已开始');}
  if(a==='export')return download('hotturkey-blocks.json',await api('export'));
- if(a==='import'){const text=await readFile('.json');if(text){const value=JSON.parse(text);const result=await api('import',{blocks:value.blocks});toast(`已导入 ${result.count} 条停用规则`);}}
+ if(a==='import'){
+  const text=await readFile('.json');if(!text)return;
+  const value=JSON.parse(text);if(!Array.isArray(value.blocks)||value.blocks.length>200||value.blocks.some(b=>!b||typeof b!=='object'||Array.isArray(b)))throw Error('请选择包含规则列表的 HotTurkey 导出文件（最多 200 条）');
+  importDraft=value.blocks;
+  const automatic=importDraft.filter(b=>b.autostart&&b.autostart.type&&b.autostart.type!=='none').length;
+  openModal('导入规则',`<p>即将导入 ${importDraft.length} 条规则。现有规则与锁定保持不变，新规则默认停用。</p><ul>${importDraft.map(b=>`<li>${esc(b.name||'未命名规则')}</li>`).join('')}</ul>${automatic?`<label class="check"><input id="import-keep-autostart" type="checkbox"> 保留 ${automatic} 条规则的自动启动计划</label><p class="hint">勾选后，这些规则会按原计划自行启用；不勾选则关闭自动启动，保留网站、应用和每周日程。</p>`:''}`,`${btn('close','取消')}${btn('confirm-import','导入','','primary')}`);return;
+ }
+ if(a==='confirm-import'){
+  if(!importDraft)throw Error('请重新选择导入文件');
+  const allow_autostart=$('#import-keep-autostart')?.checked===true;
+  const device=allow_autostart&&importDraft.some(b=>b.device&&b.device!=='none'&&b.autostart&&b.autostart.type!=='none');
+  if(device&&!confirm('自动启动计划包含设备规则，生效时可能锁屏、注销或关机。确认保留这些设备动作？'))return;
+  const blocks=allow_autostart?importDraft:importDraft.map(b=>({...b,autostart:{type:'none'}}));
+  const result=await api('import',{blocks,allow_autostart,confirm_device:device});
+  closeModal();toast(`已导入 ${result.count} 条规则`+(allow_autostart?'，自动启动计划已保留':'，新规则保持停用'));await refresh();return;
+ }
  if(a==='export-stats')return download('hotturkey-statistics.json',await api('statistics/export'));
  if(a==='clear-stats'&&confirm('删除全部统计记录？使用额度不会被重置。')){await api('statistics/clear',{});toast('统计记录已删除');}
  if(a==='notifications'){if(window.webkit?.messageHandlers?.native)window.webkit.messageHandlers.native.postMessage('notifications');else toast('请从 macOS 桌面应用启用通知');return;}

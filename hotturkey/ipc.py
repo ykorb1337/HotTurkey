@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from .model import validate_text_encoding
 
 MAX_FRAME=1024*1024
 FRAME_TIMEOUT=5
@@ -90,6 +91,15 @@ def _object(pairs):
     return value
 
 
+def decode_json(payload):
+    try:
+        value=json.loads(payload,parse_constant=_reject_constant,parse_float=_float,
+                         parse_int=_integer,object_pairs_hook=_object)
+        validate_text_encoding(value)
+        return value
+    except (ValueError,UnicodeError,RecursionError):raise ProtocolError('Invalid JSON or text encoding') from None
+
+
 def receive(connection):
     deadline=time.monotonic()+FRAME_TIMEOUT
     header=_read(connection,4,deadline,eof_ok=True)
@@ -97,9 +107,7 @@ def receive(connection):
     size=struct.unpack('!I',header)[0]
     if not 0<size<=MAX_FRAME:raise ProtocolError('Invalid IPC frame length')
     payload=_read(connection,size,deadline)
-    try:value=json.loads(payload,parse_constant=_reject_constant,parse_float=_float,
-                         parse_int=_integer,object_pairs_hook=_object)
-    except (ValueError,UnicodeError,RecursionError) as exc:raise ProtocolError('Invalid IPC JSON') from exc
+    value=decode_json(payload)
     if not isinstance(value,dict):raise ProtocolError('IPC message must be an object')
     return value
 

@@ -10,6 +10,7 @@ from .server import default_data
 def main():
     parser=argparse.ArgumentParser(prog="hotturkey",description="HotTurkey 本地专注管理")
     parser.add_argument("--data",type=Path,default=default_data())
+    parser.add_argument('--system',action='store_true',help='通过受保护原生客户端管理系统规则；需先完成系统安装')
     parser.add_argument("--settings-password",help="管理密码；也可在交互提示中输入")
     commands=parser.add_subparsers(dest="command",required=True)
     commands.add_parser("status")
@@ -23,18 +24,27 @@ def main():
     p=commands.add_parser("check");p.add_argument("url")
     p=commands.add_parser("export");p.add_argument("file",type=Path)
     p=commands.add_parser("import");p.add_argument("file",type=Path)
+    p.add_argument('--keep-autostart',action='store_true',help='明确保留导入规则的自动启动计划')
+    p.add_argument('--confirm-device',action='store_true',help='确认保留设备自动启动，可能锁屏、注销或关机')
     p=commands.add_parser("stats");p.add_argument("--export",type=Path)
     args=parser.parse_args()
     if args.command=="serve":
+        if args.system:raise SystemExit('系统后台需通过受保护安装启动')
         from .server import Service
         try:Service(args.data,enforce=args.enforce).run()
         except ValueError as exc:raise SystemExit(str(exc)) from None
         return
     try:
-        info=json.loads((args.data/"connection.json").read_text())
+        if args.system:
+            if args.command=='open':raise ValueError('系统模式桌面入口尚待接入；可先使用 status 管理接口')
+            from .system_client import SystemClient
+            system_client=SystemClient()
+            info={'port':0,'token':''}
+        else:info=json.loads((args.data/"connection.json").read_text())
         origin=f'http://127.0.0.1:{info["port"]}'
         session=""
         def call(path,data=None):
+            if args.system:return system_client.api(path,data)
             request=urllib.request.Request(origin+"/api/"+path,data=json.dumps(data).encode() if data is not None else None,headers={"Authorization":"Bearer "+info["token"],"Content-Type":"application/json","X-HotTurkey-Session":session})
             try:
                 with urllib.request.urlopen(request,timeout=10) as response:return json.load(response)
@@ -42,7 +52,7 @@ def main():
                 raise ValueError(json.load(exc).get("error","操作失败")) from None
         if args.command=="open":webbrowser.open(origin+"/#token="+info["token"]);return
         state=call("state")
-        if not state["authenticated"] and args.command not in {"status","check"}:
+        if not state["authenticated"] and args.command not in {"status","check"} and state.get('can_manage',True):
             import getpass
             password=args.settings_password or getpass.getpass("设置密码：")
             session=call("auth",{"password":password})["session"]
@@ -72,7 +82,13 @@ def main():
                 b[args.to].append(args.rule);result=call("blocks/save",{"id":ident,"block":b})
         elif command=="check":result=call("check",{"url":args.url,"record":False})
         elif command=="export":args.file.write_text(json.dumps(call("export"),ensure_ascii=False,indent=2));result={"file":str(args.file)}
-        elif command=="import":result=call("import",{"blocks":json.loads(args.file.read_text())["blocks"]})
+        elif command=="import":
+            value=json.loads(args.file.read_text())
+            if not isinstance(value,dict) or not isinstance(value.get('blocks'),list):raise ValueError('请选择包含规则列表的导出文件')
+            blocks=value['blocks']
+            if args.keep_autostart and not args.confirm_device and any(isinstance(b,dict) and b.get('device','none')!='none' and isinstance(b.get('autostart'),dict) and b['autostart'].get('type','none')!='none' for b in blocks):raise ValueError('保留设备自动启动须明确指定 --confirm-device')
+            if not args.keep_autostart:blocks=[{**b,'autostart':{'type':'none'}} if isinstance(b,dict) else b for b in blocks]
+            result=call('import',{'blocks':blocks,'allow_autostart':args.keep_autostart,'confirm_device':args.confirm_device})
         elif command=="stats":
             result=call("statistics/export" if args.export else "statistics")
             if args.export:args.export.write_text(json.dumps(result,ensure_ascii=False,indent=2));result={"file":str(args.export)}

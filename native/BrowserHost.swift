@@ -118,18 +118,29 @@ struct BrowserHostMain {
             var sequence=0
             while let header=try pipeRead(4,120) {
                 let count=header.enumerated().reduce(UInt32(0)) { $0 | UInt32($1.element)<<UInt32($1.offset*8) }
-                guard count>0,count<=maximumFrame,let body=try pipeRead(Int(count),5),
-                      let message=try JSONSerialization.jsonObject(with:body) as? [String:Any] else { throw BridgeError.invalid }
+                guard count>0,count<=maximumDocument,let body=try pipeRead(Int(count),5),
+                      var message=try JSONSerialization.jsonObject(with:body) as? [String:Any] else { throw BridgeError.invalid }
+                let supportsDocuments=(message.removeValue(forKey:"document_protocol") as? Int)==1
                 let current=try parentBinding(pid,parent,choices,origins)
                 guard current.name==binding.name else { throw BridgeError.identity }
                 sequence+=1
-                let payload=try JSONSerialization.data(withJSONObject:["op":"browser-request","data":[
+                var envelope:[String:Any]=["op":"browser-request","data":[
                     "browser":binding.name,"parent_pid":Int(pid),"parent_start_sec":parent.pbi_start_tvsec,
-                    "parent_start_usec":parent.pbi_start_tvusec,"channel":channel,"sequence":sequence,"message":message]])
+                    "parent_start_usec":parent.pbi_start_tvusec,"channel":channel,"sequence":sequence,"message":message]]
+                if message["op"] as? String=="document-read" { envelope=["op":"document-read","data":message["data"] ?? [:]] }
+                let payload=try JSONSerialization.data(withJSONObject:envelope)
                 do {
-                    let response=try request(payload,path:path,serverUID:uid)
+                    let response=try documentRequest(payload,path:path,serverUID:uid,resolve:false,beforeEach:{
+                        _ = try parentBinding(pid,parent,choices,origins)
+                    })
                     guard let value=try JSONSerialization.jsonObject(with:response) as? [String:Any] else { throw BridgeError.invalid }
-                    if value["ok"] as? Bool==true,let result=value["result"] as? [String:Any] { try pipeReply(result) }
+                    if value["ok"] as? Bool==true,let result=value["result"] as? [String:Any] {
+                        if !supportsDocuments,let meta=result["__hotturkey_document__"] as? [String:Any],let token=meta["id"] as? String {
+                            let cancel=try JSONSerialization.data(withJSONObject:["op":"document-cancel","data":["id":token]])
+                            _ = try request(cancel,path:path,serverUID:uid)
+                            try pipeReply(["error":"规则列表较大，请重新加载 HotTurkey 扩展以更新通信协议","policy":true])
+                        } else { try pipeReply(result) }
+                    }
                     else { try pipeReply(["error":value["error"] as? String ?? "请求未通过验证","policy":true]) }
                 } catch { try pipeReply(["error":"HotTurkey 受保护后台未连接"]) }
             }

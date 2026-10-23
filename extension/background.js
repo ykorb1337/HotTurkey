@@ -51,7 +51,37 @@ async function quickAddSite(data,sender){
   return result;
 }
 function connect(){if(port)return;try{port=api.runtime.connectNative('local.hotturkey.bridge');port.onMessage.addListener(result=>{if(result.error&&!result.policy)forgetTabGrants().catch(()=>{});const item=queue.shift();if(item){clearTimeout(item.timer);item.resolve(result);}connected=!result.error||result.policy===true;});port.onDisconnect.addListener(()=>{port=null;connected=false;forgetTabGrants().catch(()=>{});for(const item of queue){clearTimeout(item.timer);item.resolve({error:'后台未连接'});}queue=[];api.action.setBadgeText({text:'!'});api.action.setBadgeBackgroundColor({color:'#b95636'});});}catch{port=null;connected=false;}}
-function native(op,data){connect();if(!port)return Promise.resolve({error:'后台未连接'});return new Promise(resolve=>{const item={resolve,timer:setTimeout(()=>{if(port)port.disconnect();},7000)};queue.push(item);try{port.postMessage({op,data});}catch{queue.pop();clearTimeout(item.timer);resolve({error:'后台未连接'});}});}
+function nativeFrame(op,data){
+  connect();if(!port)return Promise.resolve({error:'后台未连接'});
+  const long=JSON.stringify({op,data}).length>262144||queue.some(item=>item.long);
+  return new Promise(resolve=>{const item={resolve,long,timer:setTimeout(()=>{if(port)port.disconnect();},long?180000:7000)};queue.push(item);try{port.postMessage({op,data,document_protocol:1});}catch{queue.pop();clearTimeout(item.timer);resolve({error:'后台未连接'});}});
+}
+async function resolveNativeDocument(first,fetchPage){
+  if(!first||typeof first!=='object'||!Object.hasOwn(first,'__hotturkey_document__'))return first;
+  const meta=first.__hotturkey_document__;
+  if(!meta||typeof meta.id!=='string'||!/^[a-zA-Z0-9_-]{32,128}$/.test(meta.id)||!Number.isInteger(meta.size)||meta.size<1||meta.size>64*1024*1024||typeof meta.sha256!=='string'||!/^[0-9a-f]{64}$/.test(meta.sha256))throw Error('Invalid document metadata');
+  const parts=[];let length=0,page=first;
+  while(true){
+    const same=page?.__hotturkey_document__;
+    if(!same||same.id!==meta.id||same.size!==meta.size||same.sha256!==meta.sha256||page.offset!==length||typeof page.data!=='string'||page.data.length>349528)throw Error('Invalid document page');
+    const raw=atob(page.data),part=Uint8Array.from(raw,c=>c.charCodeAt(0));
+    if(!part.length||part.length>262144||length+part.length>meta.size)throw Error('Invalid document length');
+    parts.push(part);length+=part.length;
+    if(page.next===null){if(length!==meta.size)throw Error('Truncated document');break;}
+    if(!Number.isInteger(page.next)||page.next!==length||page.next>=meta.size)throw Error('Invalid document order');
+    page=await fetchPage({id:meta.id,offset:page.next});
+    if(page?.error)return page;
+  }
+  const bytes=new Uint8Array(length);let offset=0;for(const part of parts){bytes.set(part,offset);offset+=part.length;}
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+  if(hash!==meta.sha256)throw Error('Document integrity mismatch');
+  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+}
+async function native(op,data){
+  const first=await nativeFrame(op,data);
+  try{return await resolveNativeDocument(first,data=>nativeFrame('document-read',data));}
+  catch{connected=false;return {error:'规则数据传输未通过校验，请重试'};}
+}
 function glob(pattern,value){return new RegExp('^'+pattern.replace(/[.+?^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$','i').test(value);}
 function browserPage(url){try{const u=new URL(url);const scheme=u.protocol.slice(0,-1).toLowerCase();let page,path;if(scheme==='about'){const parts=u.pathname.split('/');page=parts.shift();path=parts.join('/');}else if(['chrome','edge','brave','vivaldi','opera'].includes(scheme)){page=u.hostname;path=u.pathname.replace(/^\/+/, '');}else return null;if(!page)return null;return [scheme,page.toLowerCase(),decodeURIComponent((path?'/'+path:'')+u.search+u.hash).toLowerCase()];}catch{return null;}}
 function browserPageMatches(pattern,url){const actual=browserPage(url),wanted=browserPage(pattern);if(!actual||!wanted)return false;const [scheme,page,suffix]=actual,[wantedScheme,wantedPage,expected]=wanted;if(wantedScheme!==scheme&&!(wantedScheme==='chrome'&&['brave','vivaldi','opera'].includes(scheme)))return false;if(['newtab','newtab-page','extensions','addons','welcome','home'].includes(page)&&wantedPage!==page)return false;if(!glob(wantedPage,page))return false;return !expected||(expected.includes('*')?glob(expected,suffix):suffix.startsWith(expected));}

@@ -40,6 +40,21 @@ class ServiceTests(unittest.TestCase):
         b=self.block();value=self.call('export');self.call('blocks/delete',{'id':b['id']});self.call('import',value);self.assertFalse(self.call('state')['blocks'][0]['enabled'])
     def test_import_atomic(self):
         code,_=self.request('/api/import',{'blocks':[{'name':'Good'},{'name':''}]});self.assertEqual(code,400);self.assertEqual(self.call('state')['blocks'],[])
+    def test_imported_autostart_is_inert_until_explicitly_retained(self):
+        result=self.call('import',{'blocks':[{'name':'Imported device','device':'shutdown','autostart':{'type':'once','at':self.service.engine.now()-1}}]})
+        self.assertEqual(result['disabled_autostart'],1);self.service.engine.tick()
+        self.assertFalse(self.call('state')['blocks'][0]['enabled'])
+    def test_changing_password_revokes_old_management_sessions(self):
+        self.call('settings',{'password':'one'});self.session=self.call('auth',{'password':'one'})['session']
+        self.call('settings',{'password':'two'})
+        self.assertEqual(self.request('/api/blocks/save',{'block':{'name':'Denied'}})[0],400)
+        self.session=self.call('auth',{'password':'two'})['session'];self.block()
+    def test_invalid_encoding_and_nonfinite_values_are_rejected_before_mutation(self):
+        before=copy.deepcopy(self.service.store.state)
+        for body in [{'block':{'name':'bad\ud800'}},{'block':{'name':'bad','websites':['bad\udfff']}},{'block':{'name':'bad','extra':float('nan')}}]:
+            self.assertEqual(self.request('/api/blocks/save',body)[0],400)
+            self.assertEqual(self.service.store.state,before)
+        self.block();self.assertEqual(len(self.call('state')['blocks']),1)
     def test_lock_mutation_rejected_and_extension_break_available(self):
         b=self.block(**{'break':{'type':'text','custom_text':'focus'}});self.call('blocks/lock',{'id':b['id'],'type':'timer','until':self.service.engine.now()+60});self.assertEqual(self.request('/api/blocks/delete',{'id':b['id']})[0],400);self.assertEqual(self.call('extension/break',{'id':b['id']})['challenge'],'focus')
     def test_settings_password(self):

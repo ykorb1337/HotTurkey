@@ -30,6 +30,16 @@ DEFAULT_SETTINGS = {
 class PolicyError(ValueError):
     pass
 
+def validate_text_encoding(value):
+    pending=[value]
+    while pending:
+        item=pending.pop()
+        if isinstance(item,str):
+            try:item.encode('utf-8')
+            except UnicodeError:raise PolicyError('文本包含无效 Unicode 字符') from None
+        elif isinstance(item,dict):pending.extend(item.keys());pending.extend(item.values())
+        elif isinstance(item,list):pending.extend(item)
+
 def integer(value, low, high, label):
     if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or int(value) != value or not low <= value <= high:
         raise PolicyError(f"{label}必须为 {low}–{high} 的整数")
@@ -40,13 +50,13 @@ def lines(value):
         value = value.splitlines()
     if not isinstance(value, list) or len(value) > 10000:
         raise PolicyError("规则须为文本列表，最多 10000 条")
-    result = []
+    result = [];seen=set()
     for item in value:
         if not isinstance(item, str) or len(item) > 2048 or any(ord(c) < 32 for c in item):
             raise PolicyError("规则格式无效")
         item = item.strip()
-        if item and item not in result:
-            result.append(item)
+        if item and item not in seen:
+            result.append(item);seen.add(item)
     return result
 
 def spans(value):
@@ -96,6 +106,7 @@ def validate_break(value):
 def validate_block(value, previous=None):
     if not isinstance(value, dict):
         raise PolicyError("规则格式无效")
+    validate_text_encoding(value)
     b = copy.deepcopy(value)
     b["id"] = previous["id"] if previous else str(uuid.uuid4())
     b["name"] = str(b.get("name", "")).strip()[:100]

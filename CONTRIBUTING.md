@@ -18,12 +18,16 @@ node tests/browser_pages.test.cjs
 node tests/tab_exceptions.test.cjs
 node tests/quick_add.test.cjs
 node tests/text_size.test.cjs
+node tests/document_transfers.test.cjs
+node tests/import_preview.test.cjs
 python3 scripts/build.py --qa
 python3 tests/integration_peer.py
 python3 tests/integration_authority.py
 python3 tests/integration_system_enforcement.py
 python3 tests/integration_trusted_sessions.py
 python3 tests/integration_trusted_browsers.py
+python3 tests/integration_management.py
+python3 tests/integration_legacy_documents.py
 python3 tests/integration_runtime.py
 ```
 
@@ -37,6 +41,10 @@ Do not include databases, connection files, logs, credentials, signing identitie
 or browsing histories in commits or issues. Screenshots and diagnostics should
 use synthetic rules. Code contributions are accepted under the MIT license;
 bundled third-party components retain their own licenses.
+
+The signed browser integration also uses Node.js to run the extension's actual
+document decoder against the test parent/host. If Node is not on PATH, set
+`HOTTURKEY_TEST_NODE` to its executable for that test.
 
 For interactive block-page QA, `python3 tests/integration_tab_ui.py` starts a
 local isolated fixture using the actual worker, backend and Native Messaging

@@ -59,6 +59,35 @@ enforcement.
 - Rule management uses the same lock checks as the current app. Locked rules
   permit atomic target additions, timer extensions and longer text challenges;
   other edits and deletion remain protected.
+- Protected management also covers settings, inert duplication, atomic imports,
+  lock-free configuration exports, categories/users and statistics. Only the
+  controller can mutate policy or clear statistics. Other accounts' statistics
+  are forcibly scoped to their own account, and their exports cannot bypass
+  protected overview. Password changes invalidate old manager tokens.
+- `SystemClient` and the CLI's explicit `--system` mode use the fixed root-owned
+  native client, never a root database or caller-selected socket. Existing CLI
+  commands retain the current-user route by default. System-mode desktop/open
+  routing is still pending, and `open_at_login`/`start_in_tray` are stored policy
+  preferences whose protected session application is not implemented yet.
+- Large reads use immutable document snapshots. Uploads execute only after full
+  length/hash/JSON validation, then pass the normal operation permission/lock
+  checks. Transfer ownership includes kernel UID, role, PID and audit token;
+  another process cannot take over a cursor. Every page/chunk rechecks current
+  password/overview access. Browser pages stay below Native Messaging's one-MiB
+  output limit and the extension installs only a fully verified JSON result.
+  The extension advertises `document_protocol: 1`; the native host strips that
+  capability field before protected policy dispatch. Older decoders receive a
+  clear reload response for paged results, and unused cursors are canceled.
+- Transfer bounds are 64 MiB per UTF-8 document, 128 MiB reserved total, four
+  records per UID, 256 KiB binary chunks and an absolute 120-second lifetime.
+  These are byte-buffer bounds, not a bound on all parsed-policy heap or CPU.
+  Interrupted uploads do not modify policy. Completed mutations are not
+  automatically retried if delivery of their result fails. Large operations
+  and hostile-load recovery still need production installation validation.
+- The ordinary current-user Python host also pages large responses, using a
+  process-local cache without kernel peer attestation. Its existing extension
+  operation allowlist is unchanged. This compatibility path does not gain the
+  protected service's code/parent verification or anti-tamper guarantees.
 - `HotTurkeySystemAgent` enumerates processes using libproc kernel information,
   including the real/effective/saved UID, process start time and executable.
   It excludes system accounts, privilege-changing processes and its own parent.
@@ -101,6 +130,8 @@ python3 tests/integration_authority.py
 python3 tests/integration_system_enforcement.py
 python3 tests/integration_trusted_sessions.py
 python3 tests/integration_trusted_browsers.py
+python3 tests/integration_management.py
+python3 tests/integration_legacy_documents.py
 ```
 
 The test starts an ordinary-user service in a temporary directory and uses the
@@ -159,10 +190,26 @@ An editable unpacked extension or developer tools can undermine browser
 reports even when the native parent is authentic. That deployment/tamper
 boundary is unresolved; this foundation is not enabled by the current app.
 
+`integration_management.py` sends over one MiB of Unicode targets through the
+real signed client and actual bounded socket frames. It verifies upload and
+read-back integrity, unchanged locks during large additions, imports/exports,
+duplication, password/overview checks, paged statistics, charges surviving
+statistics deletion, and an abandoned upload whose new process cannot resume
+it. A reachable QA server returning a corrupt document is rejected by the
+native client before any partial result reaches stdout. This is ordinary-user
+isolated transport evidence, not an installed root-service test.
+
+The browser fixture additionally sends an over-one-MiB report through the
+signed host and resolves 4,000 Unicode targets using the extension's actual
+JavaScript decoder. It verifies that every host-to-browser frame remains below
+one MiB. The signed test parent is still not a real browser.
+
 ## Work still required before system installation
 
-1. Connect policy RPC to desktop, browser bridge and command-line clients with
-   complete settings/import/export/statistics support and large-policy paging.
+1. Connect the desktop HTTP/native shell to protected management and apply
+   login/tray preferences through the trusted session agent. Management RPC,
+   explicit CLI routing and browser document paging now have isolated tests;
+   the current-user desktop still owns its existing local service.
 2. Install/supervise the trusted session agents and complete browser heartbeats,
    notifications and authorized device actions. Protected browser transport,
    heartbeat accounting and executor strictness now have isolated tests, but

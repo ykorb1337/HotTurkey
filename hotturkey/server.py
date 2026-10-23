@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from .engine import Engine, password_hash, password_ok
 from .model import PolicyError, CATEGORIES, DEFAULT_SETTINGS, integer, browser_page
+from .ipc import decode_json
 from .store import Store
 
 ROOT=Path(__file__).resolve().parent.parent
@@ -97,7 +98,7 @@ class Service:
                         size=int(self.headers.get("Content-Length","0"))
                         if not 0<size<=4*1024*1024: raise PolicyError("请求长度无效")
                         self.connection.settimeout(10)
-                        data=json.loads(self.rfile.read(size))
+                        data=decode_json(self.rfile.read(size))
                         if not isinstance(data,dict): raise PolicyError("请求格式无效")
                     value=service.api(parsed.path,self.command,data,parse_qs(parsed.query),self.headers)
                     return self.respond(200,value)
@@ -214,48 +215,26 @@ class Service:
                 if path=="/api/blocks/delete": e.delete(data["id"]); return {"ok":True}
                 if path=="/api/blocks/toggle": return e.toggle(data["id"],data.get("enabled"),data.get("confirm_device",False))
                 if path=="/api/blocks/duplicate":
-                    b=copy.deepcopy(e.find(data["id"]))
-                    b.update(name=data.get("name",b["name"]+" 副本"),enabled=False)
-                    return e.save_block(b)
+                    from .management import duplicate_block
+                    return duplicate_block(e,data["id"],data.get("name"))
                 if path=="/api/blocks/lock": return e.set_lock(data["id"],data)
                 if path=="/api/blocks/unlock": return e.unlock(data["id"],data)
                 if path=="/api/blocks/break": return e.request_break(data["id"],data)
                 if path=="/api/import":
-                    incoming=data.get("blocks",[])
-                    if not isinstance(incoming,list) or len(incoming)>200: raise PolicyError("导入规则过多")
-                    from .model import validate_block
-                    # Validate entire import before making any changes.
-                    blocks=[validate_block({**b,"enabled":False}) for b in incoming]
-                    names=[b["name"] for b in self.store.state["blocks"]]+[b["name"] for b in blocks]
-                    if len(set(names))!=len(names): raise PolicyError("导入名称重复，请先重命名")
-                    self.store.state["blocks"].extend(blocks)
-                    self.store.save()
-                    return {"count":len(blocks)}
+                    from .management import import_blocks
+                    return import_blocks(e,data.get("blocks"),data.get("allow_autostart",False),data.get("confirm_device",False))
                 if path=="/api/statistics/clear": self.store.clear_statistics(); return {"ok":True}
                 if path=="/api/settings":
                     settings=self.store.state["settings"]
-                    updated=copy.deepcopy(settings)
-                    if "password" in data:
-                        updated["settings_password"]=password_hash(data["password"]) if data["password"] else None
-                    strict={"require_extension","block_unsupported","block_task_manager","block_settings","block_installer","extension_grace","block_inactive","block_embeds","allow_files","strict_usage","idle_seconds"}
-                    any_locked=any(e.locked(b) for b in self.store.state["blocks"])
-                    for k,v in data.items():
-                        if k not in DEFAULT_SETTINGS or k=="settings_password": continue
-                        if any_locked and k in strict and v!=settings[k]: raise PolicyError("锁定期间不能修改拦截严格度")
-                        default=DEFAULT_SETTINGS[k]
-                        if isinstance(default,bool) and not isinstance(v,bool): raise PolicyError("设置值无效")
-                        updated[k]=v
-                    if updated["theme"] not in {"light","dark","system"}: raise PolicyError("主题无效")
-                    if updated["week_start"] not in {"monday","sunday"}: raise PolicyError("周起始日无效")
-                    for k,lo,hi in [("extension_grace",5,600),("idle_seconds",30,3600),("retention_days",1,3650),("text_scale",50,200)]: updated[k]=integer(updated[k],lo,hi,k)
-                    if not isinstance(updated["warning_minutes"],list): raise PolicyError("提醒时间无效")
-                    updated["warning_minutes"]=[integer(v,1,1440,"提醒分钟") for v in updated["warning_minutes"]]
+                    from .management import settings_update
+                    updated=settings_update(e,data)
                     if updated["open_at_login"]!=settings["open_at_login"]:
                         if not self.enforce:raise PolicyError("登录启动设置需从已安装的桌面版本修改")
                         from .platform_macos import configure_ui_login
                         try:configure_ui_login(updated["open_at_login"],self.store.directory)
                         except (OSError,ValueError,RuntimeError) as exc:raise PolicyError(str(exc)) from None
                     self.store.state["settings"]=updated
+                    if updated['settings_password']!=settings['settings_password']:self.auth_sessions.clear()
                     self.store.save()
                     return {"ok":True}
         raise PolicyError("未知操作")

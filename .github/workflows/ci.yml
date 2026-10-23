@@ -25,6 +25,8 @@ jobs:
           node tests/tab_exceptions.test.cjs
           node tests/quick_add.test.cjs
           node tests/text_size.test.cjs
+          node tests/document_transfers.test.cjs
+          node tests/import_preview.test.cjs
           node --check web/app.js
       - name: Native development build
         run: python3 scripts/build.py --qa --system-python
@@ -35,3 +37,5 @@ jobs:
           python3 tests/integration_system_enforcement.py
           python3 tests/integration_trusted_sessions.py
           python3 tests/integration_trusted_browsers.py
+          python3 tests/integration_management.py
+          python3 tests/integration_legacy_documents.py
