@@ -2,10 +2,17 @@
 
 ## Unreleased
 
+- Add an explicit protected desktop mode (`--system`) with a separate local
+  connection directory and no current-user database or enforcement fallback.
+  Forward each page's own password session through the fixed native client;
+  show actual executor/session health, read-only account views and retry UI.
+  Bind native commands and dialogs to the exact active loopback origin.
+  System installation and session login-item supervision remain pending.
+
 - Complete protected management RPC for settings, duplicate/import/export,
   categories, user catalogs and account-scoped statistics. Add `--system` CLI
-  routing through the fixed protected native client. Desktop system-mode
-  routing and privileged installation remain pending.
+  routing through the fixed protected native client. Privileged installation
+  and session supervision remain pending.
 - Transfer large policy/statistics documents in bounded chunks with a frozen
   snapshot, SHA-256 verification, kernel peer binding and expiring buffers.
   Native clients and the extension resolve complete results before exposing

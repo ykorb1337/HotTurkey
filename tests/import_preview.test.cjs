@@ -8,7 +8,7 @@ const context={state:{blocks:[]},importDraft:null,editorImport:null,readFile:asy
   openModal:(title,body,buttons)=>{opened={title,body,buttons};},closeModal:()=>{closed++;context.importDraft=null;},
   esc:value=>String(value).replaceAll('<','&lt;').replaceAll('>','&gt;'),btn:()=>'',
   $:()=>({checked:keep}),confirm:()=>confirmation,api:async(path,data)=>{calls.push({path,data});return {count:1};},toast:()=>{},refresh:async()=>{}};
-vm.createContext(context);vm.runInContext(action,context);
+vm.createContext(context);vm.runInContext(source.match(/function canManage\([^\n]+/)[0]+'\n'+source.match(/function allowedAction\([^\n]+/)[0]+'\n'+action,context);
 const invoke=name=>context.action(name,{dataset:{}});
 let count=0;
 (async()=>{

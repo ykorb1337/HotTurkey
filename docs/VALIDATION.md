@@ -128,6 +128,32 @@ In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, a
 
 ## Protected kernel execution foundation (unreleased)
 
+Latest desktop milestone: **300 Python tests and 152 browser checks**. An
+explicit `--system` native/CLI desktop route uses a separate ephemeral HTTP
+adapter with no policy database. Ten new HTTP tests cover loopback guards,
+per-request password sessions, locks, statistics filters, actual health mapping,
+concurrency and no fallback after disconnect. Ten UI logic checks cover account
+permissions, read-only rules/calendar, breaks and the offline retry screen.
+
+`integration_system_desktop.py` exercises the complete HTTP -> hardened native
+client -> attested authority path, with a real current-UID kernel executor and
+native session sampler. It verifies fresh versus missing session health,
+locked additions, deletion rejection, isolated password sessions, statistics,
+over-four-MiB Unicode import/read-back and safe authority disconnect. All
+databases and connection files are disposable; root is not installed and
+production rules are untouched. `--ui` optionally holds that fixture for manual
+browser verification.
+
+In the in-app browser, the actual system UI opened a locked fixture and saved
+an additional website; the rule retained its timer lock and disabled deletion
+and toggle controls. The fixture's session agent had already stopped, and the
+interface correctly showed an unhealthy connection. This is browser UI
+evidence, not native system-window or separate-account validation. The browser
+file chooser failed during import-preview testing, so that interaction remains
+unverified; the DOM/API-double checks and actual HTTP import tests passed.
+Login/tray controls are disabled in system UI until session installation can
+apply them, rather than presenting a successful save as an applied login item.
+
 Latest management milestone: **288 Python tests and 142 browser checks**.
 Protected settings, duplicate/import/export, account-scoped statistics and CLI
 routing now have tests in addition to the previous native/session/browser

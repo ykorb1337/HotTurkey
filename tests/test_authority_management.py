@@ -42,6 +42,12 @@ class ManagementTests(unittest.TestCase):
         with self.assertRaises(PolicyError):self.call('settings',{'theme':'dark'})
         self.assertNotIn(old,self.authority.sessions)
         self.session=self.call('authenticate',{'password':'two'})['session'];self.call('settings',{'theme':'dark'})
+        # Any password accepted by settings must also be accepted by login.
+        long_password='星'*5000
+        self.call('settings',{'password':long_password})
+        self.session=self.call('authenticate',{'password':long_password})['session']
+        self.assertTrue(self.call('snapshot')['authenticated'])
+        with self.assertRaises(PolicyError):self.call('authenticate',{'password':long_password+'x'})
     def test_import_is_atomic_new_ids_unlocked_and_inert_by_default(self):
         b=self.block();before=copy.deepcopy(self.store.state)
         with self.assertRaises(PolicyError):self.call('import',{'blocks':[{'name':'Good'},{'name':''}]})

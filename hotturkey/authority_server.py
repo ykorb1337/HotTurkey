@@ -133,7 +133,7 @@ class PolicyRPC:
                 return value
             if operation=='authenticate':
                 if set(data)!={'password'}:raise PolicyError('验证字段无效')
-                return {'session':self.authority.authenticate(uid,_text(data['password'],4096,'密码'))}
+                return {'session':self.authority.authenticate(uid,_text(data['password'],5000,'密码'))}
             if operation in MANAGEMENT:
                 if set(data)-MANAGEMENT_FIELDS[operation]:raise PolicyError('管理字段无效')
                 if operation!='save' or 'id' in data:_text(data.get('id'),128,'规则')

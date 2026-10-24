@@ -66,9 +66,28 @@ enforcement.
   protected overview. Password changes invalidate old manager tokens.
 - `SystemClient` and the CLI's explicit `--system` mode use the fixed root-owned
   native client, never a root database or caller-selected socket. Existing CLI
-  commands retain the current-user route by default. System-mode desktop/open
-  routing is still pending, and `open_at_login`/`start_in_tray` are stored policy
-  preferences whose protected session application is not implemented yet.
+  commands retain the current-user route by default. Explicit system-mode
+  desktop/open routing now uses a separate unprivileged HTTP adapter. Login
+  preferences still need application/supervision through the session agent.
+- `HotTurkey.app/Contents/MacOS/HotTurkey --system` starts only the system UI
+  adapter; it does not invoke the current-user installer or executor. The CLI
+  equivalents are `python3 -m hotturkey --system serve` and, in another terminal,
+  `python3 -m hotturkey --system open`. Connection files live under the selected
+  data directory's `system-desktop/`, separately from the current-user backend.
+  The adapter has no policy database. Each HTTP request carries its own settings
+  session to the fixed protected client; authentication in one page never
+  authenticates other pages. Four concurrent native requests are allowed.
+- The shared loopback token, origin/Host validation, strict JSON parser and CSP
+  also protect system UI requests. Management and statistics permissions remain
+  in the authority. Browser/session/native usage and direct document RPC are
+  not exposed by the UI adapter. Other accounts see read-only applicable rules,
+  schedules and their own statistics. The native shell accepts commands and
+  dialogs only from its current exact HTTP loopback origin.
+- UI health distinguishes the local adapter from a fresh kernel executor and
+  live session agent. A missing authority produces a connection error with a
+  retry action; it never opens a local database or starts alternate enforcement.
+  Actual root installation, native system-window interaction, cross-account
+  sessions and login-item supervision remain unverified.
 - Large reads use immutable document snapshots. Uploads execute only after full
   length/hash/JSON validation, then pass the normal operation permission/lock
   checks. Transfer ownership includes kernel UID, role, PID and audit token;
@@ -132,6 +151,7 @@ python3 tests/integration_trusted_sessions.py
 python3 tests/integration_trusted_browsers.py
 python3 tests/integration_management.py
 python3 tests/integration_legacy_documents.py
+python3 tests/integration_system_desktop.py
 ```
 
 The test starts an ordinary-user service in a temporary directory and uses the
@@ -206,10 +226,11 @@ one MiB. The signed test parent is still not a real browser.
 
 ## Work still required before system installation
 
-1. Connect the desktop HTTP/native shell to protected management and apply
-   login/tray preferences through the trusted session agent. Management RPC,
-   explicit CLI routing and browser document paging now have isolated tests;
-   the current-user desktop still owns its existing local service.
+1. Apply login/tray preferences through the trusted session agent and validate
+   the installed native system window. Explicit desktop/CLI routing, protected
+   management and browser paging now have isolated tests; default desktop
+   launches continue to use the existing current-user service until a system
+   installation explicitly selects protected mode.
 2. Install/supervise the trusted session agents and complete browser heartbeats,
    notifications and authorized device actions. Protected browser transport,
    heartbeat accounting and executor strictness now have isolated tests, but

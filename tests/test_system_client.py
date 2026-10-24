@@ -53,6 +53,18 @@ class SystemClientTests(unittest.TestCase):
             client=Mock();client.api.return_value={'authenticated':True,'blocks':[]}
             with patch('sys.argv',['hotturkey','--system','import',str(path),'--keep-autostart']),patch('hotturkey.system_client.SystemClient',return_value=client),contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):cli.main()
             self.assertEqual(client.api.call_count,1)
+    def test_cli_system_open_uses_only_the_separate_desktop_connection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data=Path(temporary);directory=data/'system-desktop';directory.mkdir()
+            (data/'connection.json').write_text('{"port":1111,"token":"legacy"}')
+            (directory/'connection.json').write_text('{"mode":"system","port":2222,"token":"system"}')
+            with patch('sys.argv',['hotturkey','--data',str(data),'--system','open']),patch('hotturkey.cli.webbrowser.open') as opened:
+                cli.main()
+            opened.assert_called_once_with('http://127.0.0.1:2222/#token=system')
+    def test_cli_system_serve_starts_only_the_ui_adapter(self):
+        with patch('sys.argv',['hotturkey','--system','serve']),patch('hotturkey.system_desktop.SystemDesktopService') as adapter,patch('hotturkey.server.Service',side_effect=AssertionError('Legacy service started')):
+            cli.main();adapter.return_value.run.assert_called_once_with()
+        with patch('sys.argv',['hotturkey','--system','serve','--enforce']),self.assertRaises(SystemExit):cli.main()
 
 
 if __name__=='__main__':unittest.main()

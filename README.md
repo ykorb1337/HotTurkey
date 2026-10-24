@@ -108,7 +108,7 @@ python3 -m hotturkey stats --export statistics.json
 
 命令行与界面共享相同的锁定和设置密码检查。设置密码开启时，会交互要求验证。设备规则启用需显式 `--confirm-device`。持续番茄钟可用 `python3 -m hotturkey reset-pomodoro "规则名"` 重置；文本锁可再次使用 `lock "规则名" --text-length 新长度` 增强。
 
-导入默认停用新规则并关闭自动启动。需要保留计划时使用 `import blocks.json --keep-autostart`；保留设备自动启动还需加 `--confirm-device`。实验性的 `--system` 通过受保护原生客户端管理共享规则，需要后续特权安装才能在正式环境使用；它不读取或替换当前用户数据库，系统模式的桌面入口尚未接通。
+导入默认停用新规则并关闭自动启动。需要保留计划时使用 `import blocks.json --keep-autostart`；保留设备自动启动还需加 `--confirm-device`。实验性的 `--system` 通过受保护原生客户端管理共享规则，需要后续特权安装才能在正式环境使用；它不读取或替换当前用户数据库。可用 `python3 -m hotturkey --system serve` 启动独立桌面入口，再用 `python3 -m hotturkey --system open` 打开；原生应用的可执行文件也接受 `--system`。默认启动方式继续使用当前用户后台。
 
 ## 数据与恢复
 
@@ -164,7 +164,7 @@ The toolbar popup can append the current domain or path to an existing rule, inc
 
 Interface size is adjustable from 50–200% in Settings, with Command/Ctrl plus/minus or scrolling, and star/zero reset. The size is saved locally. Dialogs and navigation adapt to the effective viewport, and calendar dragging uses scaled coordinates. Native keyboard and 150% calendar interactions have been tested; native mouse gestures remain unverified.
 
-The unreleased protected-service foundation connects management RPC, a kernel process executor, a separately attested native session agent and a restricted browser host. Settings/import/export/statistics and explicit `--system` CLI routing now have isolated tests, including large Unicode document transfers. Parent browser code/origin and fresh kernel identity are checked before browser operations; missing session activity earns no credit. It is not enabled by the current-user installer. Desktop routing, session preference application, supervision, production browser deployment/tamper validation, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
+The unreleased protected-service foundation connects management RPC, a kernel process executor, a separately attested native session agent and a restricted browser host. Settings/import/export/statistics and explicit `--system` CLI/desktop routing now have isolated tests, including large Unicode document transfers. The system desktop adapter carries per-page password sessions and never falls back to a current-user database. Parent browser code/origin and fresh kernel identity are checked before browser operations; missing session activity earns no credit. It is not enabled by the current-user installer. Session preference application, supervision, production browser deployment/tamper validation, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
 
 The original turkey icon uses warm tail feathers, a cream body and a dark tile.
 Its editable vector source is `assets/icon.json`; `scripts/build_icons.py`

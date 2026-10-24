@@ -29,14 +29,21 @@ def main():
     p=commands.add_parser("stats");p.add_argument("--export",type=Path)
     args=parser.parse_args()
     if args.command=="serve":
-        if args.system:raise SystemExit('系统后台需通过受保护安装启动')
+        if args.system:
+            if args.enforce:raise SystemExit('系统界面不启动当前用户执行器；请移除 --enforce')
+            from .system_desktop import SystemDesktopService
+            SystemDesktopService(args.data).run();return
         from .server import Service
         try:Service(args.data,enforce=args.enforce).run()
         except ValueError as exc:raise SystemExit(str(exc)) from None
         return
     try:
         if args.system:
-            if args.command=='open':raise ValueError('系统模式桌面入口尚待接入；可先使用 status 管理接口')
+            if args.command=='open':
+                from .system_desktop import desktop_directory
+                info=json.loads((desktop_directory(args.data)/'connection.json').read_text())
+                if info.get('mode')!='system':raise ValueError('系统界面连接信息无效')
+                webbrowser.open(f'http://127.0.0.1:{int(info["port"])}/#token={info["token"]}');return
             from .system_client import SystemClient
             system_client=SystemClient()
             info={'port':0,'token':''}

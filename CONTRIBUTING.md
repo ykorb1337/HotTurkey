@@ -20,6 +20,7 @@ node tests/quick_add.test.cjs
 node tests/text_size.test.cjs
 node tests/document_transfers.test.cjs
 node tests/import_preview.test.cjs
+node tests/system_desktop.test.cjs
 python3 scripts/build.py --qa
 python3 tests/integration_peer.py
 python3 tests/integration_authority.py
@@ -28,6 +29,7 @@ python3 tests/integration_trusted_sessions.py
 python3 tests/integration_trusted_browsers.py
 python3 tests/integration_management.py
 python3 tests/integration_legacy_documents.py
+python3 tests/integration_system_desktop.py
 python3 tests/integration_runtime.py
 ```
 

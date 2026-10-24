@@ -19,6 +19,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     var currentNavigation: WKNavigation?
     var installation: Process?
     var connectionPending = false
+    var systemMode = false
+    var activeOrigin: URL?
     let probeSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.connectionProxyDictionary = [:]
@@ -32,6 +34,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         } else {
             dataDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/HotTurkey")
         }
+        systemMode = CommandLine.arguments.contains("--system")
+        if systemMode { dataDirectory = dataDirectory.appendingPathComponent("system-desktop") }
         try? FileManager.default.createDirectory(at:dataDirectory,withIntermediateDirectories:true)
         let menu = NSMenu()
         menu.addItem(withTitle:"打开 HotTurkey",action:#selector(show),keyEquivalent:"")
@@ -67,8 +71,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         if !CommandLine.arguments.contains("--login") { show() }
     }
     func connection(_ completion:@escaping([String:Any]?)->Void) {
-        guard let data = try? Data(contentsOf:dataDirectory.appendingPathComponent("connection.json")), let object = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any], let port = object["port"] as? Int, let token = object["token"] as? String else { completion(nil); return }
-        var request = URLRequest(url:URL(string:"http://127.0.0.1:\(port)/api/state")!,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:1)
+        guard let data = try? Data(contentsOf:dataDirectory.appendingPathComponent("connection.json")), let object = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any], let port = object["port"] as? Int, (1...65535).contains(port), let token = object["token"] as? String,
+              (object["mode"] as? String == "system") == systemMode else { completion(nil); return }
+        let endpoint = systemMode ? "health" : "state"
+        var request = URLRequest(url:URL(string:"http://127.0.0.1:\(port)/api/\(endpoint)")!,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:1)
         request.setValue("Bearer \(token)",forHTTPHeaderField:"Authorization")
         probeSession.dataTask(with:request) { _, response, error in
             let success = (response as? HTTPURLResponse)?.statusCode == 200
@@ -97,6 +103,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             navigationFinished = false
             loadingLabel.stringValue = "正在加载专注空间…"
             loadingLabel.isHidden = false
+            activeOrigin = URL(string:"http://127.0.0.1:\(port)")!
             currentNavigation = web.load(URLRequest(url:URL(string:"http://127.0.0.1:\(port)/#token=\(token)")!))
             desktopLog("loading")
             DispatchQueue.main.asyncAfter(deadline:.now()+4) {
@@ -105,7 +112,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             return
         }
         if service?.isRunning == false { service = nil }
-        let managed = FileManager.default.fileExists(atPath:FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/local.hotturkey.service.plist").path) && Bundle.main.object(forInfoDictionaryKey:"HotTurkeyDataDirectory") == nil
+        let managed = !systemMode && FileManager.default.fileExists(atPath:FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/local.hotturkey.service.plist").path) && Bundle.main.object(forInfoDictionaryKey:"HotTurkeyDataDirectory") == nil
         if service == nil && !managed {
             let process = Process()
             let configPath = Bundle.main.resourceURL!.appendingPathComponent("python-path.txt")
@@ -113,8 +120,9 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             if python.isEmpty { showError("应用运行时配置缺失，请重新安装 HotTurkey。"); return }
             process.executableURL = python.hasPrefix("/") ? URL(fileURLWithPath:python) : Bundle.main.resourceURL!.appendingPathComponent(python)
             process.currentDirectoryURL = base
-            process.arguments = ["-E","-s","-B","-m","hotturkey.server","--enforce"]
-            process.environment = ProcessInfo.processInfo.environment.merging(["HOTTURKEY_DATA":dataDirectory.path,"PYTHONDONTWRITEBYTECODE":"1"]) { _,new in new }
+            process.arguments = ["-E","-s","-B","-m","hotturkey.server"] + (systemMode ? ["--system"] : ["--enforce"])
+            let serviceDirectory = systemMode ? dataDirectory.deletingLastPathComponent() : dataDirectory!
+            process.environment = ProcessInfo.processInfo.environment.merging(["HOTTURKEY_DATA":serviceDirectory.path,"PYTHONDONTWRITEBYTECODE":"1"]) { _,new in new }
             do { try process.run(); service = process } catch { showError("无法启动后台：\(error)"); return }
         }
         retries += 1
@@ -167,8 +175,12 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     @objc func hide() { window.orderOut(nil) }
     @objc func quit() { NSApp.terminate(nil) }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool { show(); return true }
+    func trustedFrame(_ frame:WKFrameInfo)->Bool {
+        guard frame.isMainFrame, let origin = activeOrigin else { return false }
+        return frame.securityOrigin.protocol == "http" && frame.securityOrigin.host == origin.host && frame.securityOrigin.port == origin.port
+    }
     func userContentController(_ userContentController:WKUserContentController,didReceive message:WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == "127.0.0.1" else { return }
+        guard trustedFrame(message.frameInfo) else { return }
         if let body = message.body as? [String:Any], body["op"] as? String == "install" {
             guard let data = try? Data(contentsOf:dataDirectory.appendingPathComponent("connection.json")),
                   let connection = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any],
@@ -207,6 +219,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         }
     }
     func installBackend(_ identifiers:[String]) {
+        if systemMode {
+            web.evaluateJavaScript("window.receiveInstallationResult({ok:false,message:'当前为系统保护模式，请使用系统安装方案管理后台。'})")
+            return
+        }
         if installation != nil { return }
         let config = Bundle.main.resourceURL!.appendingPathComponent("python-path.txt")
         let value = ((try? String(contentsOf:config,encoding:.utf8)) ?? "").trimmingCharacters(in:.whitespacesAndNewlines)
@@ -240,7 +256,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     }
     func webView(_ webView:WKWebView,decidePolicyFor navigationAction:WKNavigationAction,decisionHandler:@escaping(WKNavigationActionPolicy)->Void) {
         if navigationAction.request.url?.absoluteString == "about:blank" { decisionHandler(.allow); return }
-        if let url = navigationAction.request.url, url.host != "127.0.0.1" { NSWorkspace.shared.open(url); decisionHandler(.cancel) } else { decisionHandler(.allow) }
+        guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
+        if url.scheme == "http", url.host == activeOrigin?.host, url.port == activeOrigin?.port { decisionHandler(.allow); return }
+        if ["https","http"].contains(url.scheme ?? ""), url.host != "127.0.0.1" { NSWorkspace.shared.open(url) }
+        decisionHandler(.cancel)
     }
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
         guard navigation === currentNavigation, webView.url?.host == "127.0.0.1" else { return }
@@ -263,18 +282,18 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     }
     func webViewWebContentProcessDidTerminate(_ webView:WKWebView) { recoverNavigation("web process terminated") }
     func webView(_ webView:WKWebView,runJavaScriptAlertPanelWithMessage message:String,initiatedByFrame frame:WKFrameInfo,completionHandler:@escaping()->Void) {
-        guard frame.isMainFrame, frame.securityOrigin.host == "127.0.0.1" else { completionHandler(); return }
+        guard trustedFrame(frame) else { completionHandler(); return }
         let alert = NSAlert(); alert.messageText = message; alert.addButton(withTitle:"确定")
         alert.beginSheetModal(for:window) { _ in completionHandler() }
     }
     func webView(_ webView:WKWebView,runJavaScriptConfirmPanelWithMessage message:String,initiatedByFrame frame:WKFrameInfo,completionHandler:@escaping(Bool)->Void) {
-        guard frame.isMainFrame, frame.securityOrigin.host == "127.0.0.1" else { completionHandler(false); return }
+        guard trustedFrame(frame) else { completionHandler(false); return }
         let alert = NSAlert(); alert.messageText = message; alert.alertStyle = .warning
         alert.addButton(withTitle:"确定"); alert.addButton(withTitle:"取消")
         alert.beginSheetModal(for:window) { response in completionHandler(response == .alertFirstButtonReturn) }
     }
     func webView(_ webView:WKWebView,runJavaScriptTextInputPanelWithPrompt prompt:String,defaultText:String?,initiatedByFrame frame:WKFrameInfo,completionHandler:@escaping(String?)->Void) {
-        guard frame.isMainFrame, frame.securityOrigin.host == "127.0.0.1" else { completionHandler(nil); return }
+        guard trustedFrame(frame) else { completionHandler(nil); return }
         let alert = NSAlert(); alert.messageText = prompt
         let input = NSTextField(frame:NSRect(x:0,y:0,width:320,height:24)); input.stringValue = defaultText ?? ""
         alert.accessoryView = input; alert.window.initialFirstResponder = input

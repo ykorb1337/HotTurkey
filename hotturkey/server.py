@@ -96,7 +96,7 @@ class Service:
                     if self.command=="POST":
                         if self.headers.get_content_type()!="application/json": raise PolicyError("请求格式须为 JSON")
                         size=int(self.headers.get("Content-Length","0"))
-                        if not 0<size<=4*1024*1024: raise PolicyError("请求长度无效")
+                        if not 0<size<=getattr(service,'maximum_body',4*1024*1024): raise PolicyError("请求长度无效")
                         self.connection.settimeout(10)
                         data=decode_json(self.rfile.read(size))
                         if not isinstance(data,dict): raise PolicyError("请求格式无效")
@@ -286,10 +286,18 @@ def main():
     p.add_argument("--data",type=Path,default=default_data())
     p.add_argument("--port",type=int,default=0)
     p.add_argument("--enforce",action="store_true")
+    p.add_argument('--system',action='store_true',help='仅启动受保护后台的本地桌面入口，不启用当前用户执行器')
     a=p.parse_args()
+    if a.system and a.enforce:p.error('--system 不可与 --enforce 同用')
     a.data.mkdir(parents=True,exist_ok=True,mode=0o700)
-    logging.basicConfig(filename=str(a.data/"service.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-    try:Service(a.data,a.port,a.enforce).run()
+    log_directory=a.data/'system-desktop' if a.system else a.data
+    log_directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+    logging.basicConfig(filename=str(log_directory/"service.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        if a.system:
+            from .system_desktop import SystemDesktopService
+            SystemDesktopService(a.data,a.port).run()
+        else:Service(a.data,a.port,a.enforce).run()
     except PolicyError as exc:raise SystemExit(str(exc)) from None
 
 if __name__=="__main__": main()
