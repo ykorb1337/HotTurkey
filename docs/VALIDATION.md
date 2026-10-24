@@ -139,6 +139,12 @@ launcher with a signed no-window QA application. It confirms fixed
 group-writable, signature-tampered or linked code/metadata. It never opens the
 installed application. It proves process spawning, not native window readiness.
 
+The actual signed session integration also enables login delivery only when
+the fixed production app is absent. On this Mac's real console, the native
+agent receives the opaque ticket, refuses the absent app, sends its failure
+receipt and leaves root-side delivery in bounded retry. It never opens an
+installed app. Headless runs record missing console-login evidence explicitly.
+
 `integration_session_supervision.py` copies the production supervision plan
 under a unique temporary label and uses the signed QA session agent/socket.
 On this Mac's real GUI launchd domain, accepted kernel-attested samples arrived

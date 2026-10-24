@@ -31,13 +31,19 @@ def main():
     proof={}
     with tempfile.TemporaryDirectory(dir='/private/tmp',prefix='ht-session-') as temporary:
         store=Store(Path(temporary)/'data');store.state['settings']['statistics']=False
+        missing_system_app=not Path('/Library/PrivilegedHelperTools/local.hotturkey/HotTurkey.app').exists()
+        # Exercise actual ticket/receipt transport without ever opening an
+        # installed app. A headless runner honestly records no console login.
+        store.state['settings']['open_at_login']=missing_system_app
         authority=PolicyAuthority(store,os.getuid(),boot_id='session-integration')
         execution=SystemExecution(authority,ROOT/'build/HotTurkeySystemAgentQA')
         sessions=TrustedSessions(authority,execution)
-        verified=[]
+        verified=[];desktop_receipts=[]
         consume=sessions.consume
         def observe_sample(identity,data):
-            result=consume(identity,data);verified.append(result['foreground_verified']);return result
+            result=consume(identity,data);verified.append(result['foreground_verified'])
+            if 'desktop_result' in data:desktop_receipts.append((data['desktop_result']['ok'],sessions.desktop.status(identity.uid)['status']))
+            return result
         sessions.consume=observe_sample
         observed=[]
         def verify(connection):
@@ -93,6 +99,10 @@ def main():
             proof['actual_foreground_samples']=values['front_present']
             proof['kernel_verified_foreground_samples']=sum(verified)
             if values['front_present']:assert any(verified)
+            if missing_system_app and values['on_console']>=2 and asid is not None:
+                assert any(not ok and status in {'retrying','failed'} for ok,status in desktop_receipts),desktop_receipts
+                proof['actual_native_login_ticket_and_failure_receipt']='PASS'
+            else:proof['actual_native_login_ticket_and_failure_receipt']='NO_CONSOLE_LOGIN' if missing_system_app else 'EXISTING_APP_UNTOUCHED'
             with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as unauthorized:
                 unauthorized.connect(str(path));assert receive(unauthorized)['ok'] is False
             proof['unsigned_same_uid_process_rejected']='PASS'
