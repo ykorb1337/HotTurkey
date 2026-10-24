@@ -68,7 +68,8 @@ enforcement.
   native client, never a root database or caller-selected socket. Existing CLI
   commands retain the current-user route by default. Explicit system-mode
   desktop/open routing now uses a separate unprivileged HTTP adapter. Login
-  preferences still need application/supervision through the session agent.
+  preference delivery and a session supervision plan now have isolated tests;
+  production deployment still requires the privileged installer.
 - `HotTurkey.app/Contents/MacOS/HotTurkey --system` starts only the system UI
   adapter; it does not invoke the current-user installer or executor. The CLI
   equivalents are `python3 -m hotturkey --system serve` and, in another terminal,
@@ -86,8 +87,37 @@ enforcement.
 - UI health distinguishes the local adapter from a fresh kernel executor and
   live session agent. A missing authority produces a connection error with a
   retry action; it never opens a local database or starts alternate enforcement.
-  Actual root installation, native system-window interaction, cross-account
-  sessions and login-item supervision remain unverified.
+  Actual root installation, native system-window interaction and cross-account
+  sessions remain unverified. A disposable current-GUI launchd crash/restart
+  test verifies passive signed-agent supervision, not an installed root service.
+- The trusted session reply can carry an opaque desktop-login ticket, never a
+  command or path. Its optional receipt is bound to the verified UID/PID/audit
+  token and a genuine audit-login/boot marker. Only first-observed new console
+  logins with `open_at_login` enabled request a UI launch. Wake, same-session
+  agent/authority restarts and enabling the preference mid-session do not
+  manufacture new launches. Disabling the preference cancels pending delivery.
+- Launch completion is persisted. Failed or unacknowledged delivery is bounded
+  to three attempts per login, with normal failure backoff of 10/30/120 seconds
+  and a 15-second acknowledgement window. Tokens and live-process leases are
+  ephemeral. A crash after spawn but before the receipt is committed can cause
+  another attempt; the native launcher first checks for an already-running
+  system app. This is not an exactly-once process-spawn guarantee. A successful
+  receipt means the process was spawned or already running, not that WebKit
+  finished loading. Enforcement remains independent of UI readiness.
+- The launcher fixes `/Library/PrivilegedHelperTools/local.hotturkey/HotTurkey.app`
+  and `--system --login`, verifies root ownership, non-writable ancestors and
+  executable/metadata, rejects links, and validates the sealed app signature.
+  The installed app must have `HotTurkeySystemMode: true` in its signed plist;
+  it defaults to protected mode and reads `start_in_tray` from the authority.
+  The current-user app retains its existing default. No production path, UID,
+  program argument or sample override was added to the native session agent.
+- `session_launch.py` renders the future `/Library/LaunchAgents/` plan with a
+  fixed native agent, Aqua sessions, RunAtLoad, KeepAlive and a ten-second
+  launchd throttle. It does not write or load it. It does not create a new audit
+  session on agent restart; its UI child is independent of the sampler's group.
+  The transactional installer must deploy the signed app and agent together,
+  preserve protected permissions, register the plan and pin the new agent's
+  code requirement. Root startup now also requires the protected app paths.
 - Large reads use immutable document snapshots. Uploads execute only after full
   length/hash/JSON validation, then pass the normal operation permission/lock
   checks. Transfer ownership includes kernel UID, role, PID and audit token;
@@ -152,6 +182,8 @@ python3 tests/integration_trusted_browsers.py
 python3 tests/integration_management.py
 python3 tests/integration_legacy_documents.py
 python3 tests/integration_system_desktop.py
+python3 tests/integration_session_desktop.py
+python3 tests/integration_session_supervision.py
 ```
 
 The test starts an ordinary-user service in a temporary directory and uses the
@@ -226,8 +258,9 @@ one MiB. The signed test parent is still not a real browser.
 
 ## Work still required before system installation
 
-1. Apply login/tray preferences through the trusted session agent and validate
-   the installed native system window. Explicit desktop/CLI routing, protected
+1. Deploy the login/tray delivery and session supervision plan through the
+   privileged installer, then validate the installed native system window and
+   actual login/tray behavior. Explicit desktop/CLI routing, protected
    management and browser paging now have isolated tests; default desktop
    launches continue to use the existing current-user service until a system
    installation explicitly selects protected mode.

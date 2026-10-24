@@ -128,6 +128,31 @@ In the isolated browser, the selector set 150%, Ctrl-minus changed it to 140%, a
 
 ## Protected kernel execution foundation (unreleased)
 
+Latest login milestone: **312 Python tests and 152 browser checks**. Twelve
+new tests exercise login versus wake/agent restart, persistent receipts,
+mid-session preference changes, bounded retry/expiry, account and process
+isolation, malformed receipts and the production launchd plan.
+
+`integration_session_desktop.py` uses the actual native delivery/parser and
+launcher with a signed no-window QA application. It confirms fixed
+`--system --login` arguments, duplicate-ticket suppression and refusal of
+group-writable, signature-tampered or linked code/metadata. It never opens the
+installed application. It proves process spawning, not native window readiness.
+
+`integration_session_supervision.py` copies the production supervision plan
+under a unique temporary label and uses the signed QA session agent/socket.
+On this Mac's real GUI launchd domain, accepted kernel-attested samples arrived
+before and after a deliberate SIGKILL/restart; the audit-login marker survived.
+The temporary service was removed. On headless CI without a GUI domain, the
+test records that this supervision check was not exercised. No root files,
+persistent login items, installed rules or user applications are modified.
+
+The production login app path and arguments are fixed, and the app consumes
+the authoritative tray setting. Capability-aware system UI enables the login
+controls only when the session protocol supports them. Deployment, actual
+new-user login, native tray/window behavior, cross-account recovery and
+installed permission/tamper validation remain pending.
+
 Latest desktop milestone: **300 Python tests and 152 browser checks**. An
 explicit `--system` native/CLI desktop route uses a separate ephemeral HTTP
 adapter with no policy database. Ten new HTTP tests cover loopback guards,
@@ -151,8 +176,8 @@ interface correctly showed an unhealthy connection. This is browser UI
 evidence, not native system-window or separate-account validation. The browser
 file chooser failed during import-preview testing, so that interaction remains
 unverified; the DOM/API-double checks and actual HTTP import tests passed.
-Login/tray controls are disabled in system UI until session installation can
-apply them, rather than presenting a successful save as an applied login item.
+Login/tray controls remain disabled against older backends without the
+new session delivery capability; supported backends expose next-login semantics.
 
 Latest management milestone: **288 Python tests and 142 browser checks**.
 Protected settings, duplicate/import/export, account-scoped statistics and CLI

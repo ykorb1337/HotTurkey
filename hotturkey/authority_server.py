@@ -317,6 +317,8 @@ def production_server():
     checker=trusted_path(INSTALL/'HotTurkeyPeerCheck')
     executor=trusted_path(INSTALL/'HotTurkeySystemAgent')
     trusted_path(INSTALL/'HotTurkeySessionAgent')
+    trusted_directory(INSTALL/'HotTurkey.app')
+    trusted_path(INSTALL/'HotTurkey.app/Contents/MacOS/HotTurkey')
     trusted_path(INSTALL/'HotTurkeyBrowserHost')
     trusted_path(INSTALL/'browsers.json')
     trusted_directory(DATA)

@@ -38,6 +38,7 @@ struct SessionAgentMain {
         guard CommandLine.arguments.count==1 else { exit(64) }
         #endif
         var eventSequence=0,sequence=0,accepted=0,consoleSamples=0,frontSamples=0
+        let desktop=SessionDesktop()
         let center=NSWorkspace.shared.notificationCenter
         let observers=[NSWorkspace.didWakeNotification,NSWorkspace.sessionDidBecomeActiveNotification].map { name in
             center.addObserver(forName:name,object:nil,queue:.main) { _ in eventSequence+=1 }
@@ -61,9 +62,11 @@ struct SessionAgentMain {
                     let front=foreground()
                     if !front.isEmpty { frontSamples+=1;sample.merge(front) { _,new in new } }
                 }
+                if let result=desktop.result { sample["desktop_result"]=result }
                 if let payload=try? JSONSerialization.data(withJSONObject:["op":"session-sample","data":sample]),
                    let response=try? request(payload,path:path,serverUID:serverUID),
-                   let value=(try? JSONSerialization.jsonObject(with:response)) as? [String:Any],value["ok"] as? Bool==true { accepted+=1 }
+                   let value=(try? JSONSerialization.jsonObject(with:response)) as? [String:Any],value["ok"] as? Bool==true,
+                   let result=value["result"] as? [String:Any],result["accepted"] as? Bool==true { accepted+=1;desktop.accepted(result) }
             }
             RunLoop.current.run(until:Date(timeIntervalSinceNow:1))
         }

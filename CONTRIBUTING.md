@@ -30,6 +30,8 @@ python3 tests/integration_trusted_browsers.py
 python3 tests/integration_management.py
 python3 tests/integration_legacy_documents.py
 python3 tests/integration_system_desktop.py
+python3 tests/integration_session_desktop.py
+python3 tests/integration_session_supervision.py
 python3 tests/integration_runtime.py
 ```
 

@@ -8,6 +8,7 @@ import math
 
 from .model import PolicyError
 from .platform_macos import BROWSERS
+from .session_desktop import SessionDesktop
 
 FIELDS={'front_pid','front_start_sec','front_start_usec','front_executable',
         'idle_seconds','on_console','sample_seq','event_seq'}
@@ -34,13 +35,14 @@ class TrustedSessions:
         self.authority=authority;self.execution=execution;self.session_identity=session_identity
         self.leases={}
         self.external_targets=lambda uid:set()
+        self.desktop=SessionDesktop(authority)
 
     def status(self,uid):
         lease=self.leases.get(uid)
-        if not lease:return {'status':'missing'}
+        if not lease:return {'status':'missing','desktop_login':self.desktop.status(uid)}
         age=max(0,self.authority.clock()-lease['at'])
         return {'status':'running' if age<=3 else 'stale','last_sample_age':age,
-                'on_console':lease['console'] if age<=3 else False}
+                'on_console':lease['console'] if age<=3 else False,'desktop_login':self.desktop.status(uid)}
 
     def activity(self,uid):
         """Private root-side context for browser accounting, never an RPC result."""
@@ -50,7 +52,10 @@ class TrustedSessions:
 
     @staticmethod
     def validate(data):
-        if set(data)!=FIELDS:raise PolicyError('会话采样字段无效')
+        if set(data)-{'desktop_result'}!=FIELDS:raise PolicyError('会话采样字段无效')
+        if 'desktop_result' in data:
+            if data['desktop_result'] is None:raise PolicyError('桌面启动回执无效')
+            SessionDesktop.validate(data['desktop_result'])
         for key,maximum in [('front_pid',2147483647),('front_start_sec',2**53),('front_start_usec',999999),('sample_seq',2**53),('event_seq',2**53)]:
             if type(data[key]) is not int or not 0<=data[key]<=maximum:raise PolicyError('会话采样数值无效')
         if data['sample_seq']==0 or type(data['on_console']) is not bool:raise PolicyError('会话采样状态无效')
@@ -83,8 +88,9 @@ class TrustedSessions:
                 and app['executable']==data['front_executable']),None)
             valid=bool(data['on_console'] and front and data['idle_seconds']<=self.authority.store.state['settings']['idle_seconds'])
             signin=False
+            marker={'boot':self.authority.boot_id,'audit_session':asid} if asid is not None else None
+            previous_login=self.authority.store.state.get('trusted_sessions',{}).get(str(uid))
             if data['on_console'] and asid is not None:
-                marker={'boot':self.authority.boot_id,'audit_session':asid}
                 known=self.authority.store.state.setdefault('trusted_sessions',{})
                 signin=known.get(str(uid))!=marker
                 known[str(uid)]=marker
@@ -118,5 +124,8 @@ class TrustedSessions:
                              'at':now,'console':data['on_console'],'valid':valid,
                              'front_pid':data['front_pid'],'idle':data['idle_seconds'],
                              'verified_console':bool(data['on_console'] and front)}
+            desktop=self.desktop.consume(uid,owner,marker,data['on_console'],previous_login,data.get('desktop_result'))
             self.authority.store.save()
-            return {'accepted':True,'foreground_verified':bool(front)}
+            result={'accepted':True,'foreground_verified':bool(front)}
+            if desktop is not None:result['desktop']=desktop
+            return result

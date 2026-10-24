@@ -164,7 +164,7 @@ The toolbar popup can append the current domain or path to an existing rule, inc
 
 Interface size is adjustable from 50–200% in Settings, with Command/Ctrl plus/minus or scrolling, and star/zero reset. The size is saved locally. Dialogs and navigation adapt to the effective viewport, and calendar dragging uses scaled coordinates. Native keyboard and 150% calendar interactions have been tested; native mouse gestures remain unverified.
 
-The unreleased protected-service foundation connects management RPC, a kernel process executor, a separately attested native session agent and a restricted browser host. Settings/import/export/statistics and explicit `--system` CLI/desktop routing now have isolated tests, including large Unicode document transfers. The system desktop adapter carries per-page password sessions and never falls back to a current-user database. Parent browser code/origin and fresh kernel identity are checked before browser operations; missing session activity earns no credit. It is not enabled by the current-user installer. Session preference application, supervision, production browser deployment/tamper validation, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
+The unreleased protected-service foundation connects management RPC, a kernel process executor, a separately attested native session agent and a restricted browser host. Settings/import/export/statistics and explicit `--system` CLI/desktop routing now have isolated tests, including large Unicode document transfers. The system desktop adapter carries per-page password sessions and never falls back to a current-user database. Parent browser code/origin and fresh kernel identity are checked before browser operations; missing session activity earns no credit. It is not enabled by the current-user installer. Production session deployment and actual login/window validation, browser deployment/tamper validation, privileged installation/migration and real separate-account/sleep-wake validation remain required; see [the system-service boundary](docs/SYSTEM-SERVICE.md).
 
 The original turkey icon uses warm tail feathers, a cream body and a dark tile.
 Its editable vector source is `assets/icon.json`; `scripts/build_icons.py`
@@ -175,3 +175,10 @@ Import now previews rule names and defaults new rules to inactive with automatic
 starts off. Retaining automatic plans is an explicit choice; device plans also
 need confirmation. CLI import supports `--keep-autostart` and, for retained
 device plans, `--confirm-device`. Existing rules and their locks are preserved.
+
+The protected session agent now delivers login-UI requests using kernel audit
+login markers, bounded retries and persisted acknowledgements. It launches only
+the fixed root-owned signed system app; duplicate tickets and same-session
+restarts do not repeatedly spawn the UI. A disposable launchd test verifies
+crash recovery of the signed passive agent. Production system installation and
+actual native login/tray behavior are still pending.

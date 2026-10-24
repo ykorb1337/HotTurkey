@@ -34,7 +34,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         } else {
             dataDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/HotTurkey")
         }
-        systemMode = CommandLine.arguments.contains("--system")
+        systemMode = CommandLine.arguments.contains("--system") || Bundle.main.object(forInfoDictionaryKey:"HotTurkeySystemMode") as? Bool == true
         if systemMode { dataDirectory = dataDirectory.appendingPathComponent("system-desktop") }
         try? FileManager.default.createDirectory(at:dataDirectory,withIntermediateDirectories:true)
         let menu = NSMenu()

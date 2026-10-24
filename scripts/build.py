@@ -24,16 +24,19 @@ def main():
     application_icon=build_icons()
     module_cache=BUILD/"swift-cache";module_cache.mkdir(exist_ok=True)
     targets=[("Agent.swift","HotTurkeyAgent",["AppKit","CoreGraphics"]),("Desktop.swift","HotTurkey",["AppKit","WebKit","UserNotifications"]),("PeerCheck.swift","HotTurkeyPeerCheck",["Foundation","Security"]),("PolicyClient.swift","HotTurkeyPolicyClient",["Foundation"])]
-    targets.append(('SessionAgent.swift','HotTurkeySessionAgent',['AppKit','CoreGraphics']))
+    targets.append(('SessionAgent.swift','HotTurkeySessionAgent',['AppKit','CoreGraphics','Security']))
     targets.append(('BrowserHost.swift','HotTurkeyBrowserHost',['Foundation','Security']))
     if args.qa:
         targets.extend([("PeerFixture.swift","HotTurkeyPeerFixture",["Foundation"]),("PolicyClient.swift","HotTurkeyPolicyClientQA",["Foundation"])])
-        targets.append(('SessionAgent.swift','HotTurkeySessionAgentQA',['AppKit','CoreGraphics']))
+        targets.append(('SessionAgent.swift','HotTurkeySessionAgentQA',['AppKit','CoreGraphics','Security']))
+        targets.append(('SessionDesktopFixture.swift','HotTurkeySessionDesktopFixture',['AppKit','Security']))
+        targets.append(('LoginAppFixture.swift','HotTurkeyLoginAppFixture',['Foundation']))
         targets.extend([('BrowserHost.swift','HotTurkeyBrowserHostQA',['Foundation','Security']),('BrowserFixture.swift','HotTurkeyBrowserFixture',['Foundation'])])
     for source,name,frameworks in targets:
         architecture='arm64' if platform.machine() in {'arm64','aarch64'} else 'x86_64'
         command=["/usr/bin/swiftc","-swift-version","5","-target",architecture+'-apple-macos12.0',"-O","-module-cache-path",str(module_cache),str(ROOT/"native"/source),"-o",str(BUILD/name)]
         if source in {'PolicyClient.swift','SessionAgent.swift','BrowserHost.swift'}:command.append(str(ROOT/'native/LocalPolicySocket.swift'))
+        if source in {'SessionAgent.swift','SessionDesktopFixture.swift'}:command.append(str(ROOT/'native/SessionDesktop.swift'))
         if name in {'HotTurkeyPolicyClientQA','HotTurkeySessionAgentQA','HotTurkeyBrowserHostQA'}:command.extend(['-D','QA'])
         for framework in frameworks:command.extend(["-framework",framework])
         subprocess.run(command,check=True)
