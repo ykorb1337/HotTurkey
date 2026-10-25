@@ -234,10 +234,14 @@ def installation_lock(directory,*,owner_uid=0,anchor=Path('/')):
     directory=Path(directory)
     protected_directory(directory,owner_uid,Path(anchor))
     descriptor=os.open(directory/'install.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
+    if descriptor<3:
+        previous=descriptor
+        try:descriptor=fcntl.fcntl(previous,fcntl.F_DUPFD_CLOEXEC,3)
+        finally:os.close(previous)
     try:
         info=os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_uid!=owner_uid or info.st_mode&0o077 or info.st_nlink!=1:raise PermissionError('安装锁无效')
         try:fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise RuntimeError('另一个系统安装事务正在执行') from None
-        yield
+        yield descriptor
     finally:os.close(descriptor)

@@ -86,9 +86,9 @@ class _Job:
 
 class _JobControl:
     """Trusted internal adapter, also exercised with disposable GUI jobs."""
-    def __init__(self,permission,validate,*,run=subprocess.run,timeout=10,clock=time.monotonic):
+    def __init__(self,permission,validate,*,run=subprocess.run,timeout=10,clock=time.monotonic,sleep=time.sleep):
         if type(timeout) not in {int,float} or not math.isfinite(timeout) or not 1<=timeout<=30:raise ValueError('服务操作时限无效')
-        self.permission=permission;self.validate=validate;self.run=run;self.timeout=timeout;self.clock=clock;self.deadline=None
+        self.permission=permission;self.validate=validate;self.run=run;self.timeout=timeout;self.clock=clock;self.sleep=sleep;self.deadline=None
 
     def remaining(self):
         value=self.timeout if self.deadline is None else self.deadline-self.clock()
@@ -110,6 +110,56 @@ class _JobControl:
         self.remaining()
         if type(result.returncode) is not int:raise RuntimeError('服务控制返回无效状态')
         return result.returncode
+
+    def signal_job(self,job,signal):
+        self.permission()
+        if signal not in {'SIGSTOP','SIGCONT'}:raise ValueError('安装服务信号无效')
+        code=self.command('kill',signal,job.target)
+        if code and self.loaded(job):raise RuntimeError('无法调整固定服务状态（代码 '+str(code)+'）')
+
+    def running_pid(self,job):
+        self.permission()
+        result=self.run(['/bin/launchctl','kickstart','-p',job.target],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','LC_ALL':'C'},cwd='/',close_fds=True,timeout=min(3,self.remaining()))
+        self.remaining()
+        if result.returncode or not isinstance(result.stdout,bytes) or len(result.stdout)>32 or not re.fullmatch(rb'[1-9][0-9]{0,9}\n?',result.stdout):
+            raise RuntimeError('无法确认固定作业的内核进程')
+        pid=int(result.stdout)
+        if not 1<pid<=2147483647:raise ValueError('服务进程编号越界')
+        return pid
+
+    def pause_unload(self,job,*,observe=None,before_unload=lambda observer:None):
+        """Freeze one job, capture its kernel groups, unload and prove exit.
+
+        The caller persists before_unload evidence before removal. Recovery
+        must resume an old job that survived an installer crash while frozen.
+        No PID/group is selected for a signal; only fixed launchd jobs are.
+        """
+        from .system_processes import JobProcesses
+        paused=False;removed=False
+        try:
+            with self.window():
+                self.permission()
+                if not self.loaded(job):return False
+                # A recovery driver must run in its own supervised process,
+                # never freeze the authority that is executing this very call.
+                if self.running_pid(job) in {os.getpid(),os.getppid()}:raise PermissionError('安装控制不能暂停自身或其父进程')
+                self.signal_job(job,'SIGSTOP');paused=True
+                pid=self.running_pid(job)
+                observer=(observe or JobProcesses)(pid,0 if job.domain=='system' else int(job.domain[4:]))
+                observer.confirm_frozen();before_unload(observer);self.remaining()
+                self.unload(job);removed=True
+                observer.wait(self.remaining)
+                return True
+        finally:
+            if paused and not removed:
+                # A failed proof must not leave an otherwise loaded old backend
+                # frozen. This cleanup has a fresh, separately bounded budget.
+                previous=self.deadline;self.deadline=None
+                try:
+                    with self.window():
+                        if self.loaded(job):self.signal_job(job,'SIGCONT')
+                finally:self.deadline=previous
 
     def domain_exists(self,domain):
         if not valid_domain(domain):raise ValueError('服务域无效')
@@ -144,7 +194,8 @@ class _JobControl:
             self.permission()
             if not self.loaded(job):return False
             code=self.command('bootout',job.target)  # Never boot out a whole domain.
-            if self.loaded(job):raise RuntimeError('服务卸载后仍有注册（代码 '+str(code)+'）')
+            if code and self.loaded(job):raise RuntimeError('无法卸载服务（代码 '+str(code)+'）')
+            while self.loaded(job):self.sleep(min(.05,self.remaining()))
             return True
 
 
@@ -165,7 +216,7 @@ class SystemJobs:
         plan=legacy_plan(self.home)
         self.legacy=_Job('gui/'+str(self.uid),LEGACY_LABEL,self.home/'Library/LaunchAgents'/str(LEGACY_LABEL+'.plist'),plan)
         self.saved_legacy=_Job(self.legacy.domain,LEGACY_LABEL,self.directory/'legacy.plist',plan)
-        self.control=_JobControl(root_only,lambda job:read_plan(job.plist,job.expected))
+        self.control=_JobControl(root_only,lambda job:read_plan(job.plist,job.expected),timeout=30)
 
     def session(self,uid):
         human_account(uid)
@@ -232,3 +283,15 @@ class SystemJobs:
     def load_authority(self):return self.control.load(self.authority)
     def unload_session(self,uid):return self.control.unload(self.session(uid))
     def load_session(self,uid):return self.control.load(self.session(uid))
+    def stop_authority(self,**options):return self.control.pause_unload(self.authority,**options)
+    def stop_legacy(self,**options):
+        root_only();read_plan(self.saved_legacy.plist,self.saved_legacy.expected)
+        return self.control.pause_unload(self.legacy,**options)
+    def stop_session(self,uid,**options):return self.control.pause_unload(self.session(uid),**options)
+    def resume_authority(self):
+        if self.control.loaded(self.authority):self.control.signal_job(self.authority,'SIGCONT')
+    def resume_legacy(self):
+        if self.control.loaded(self.legacy):self.control.signal_job(self.legacy,'SIGCONT')
+    def resume_session(self,uid):
+        job=self.session(uid)
+        if self.control.loaded(job):self.control.signal_job(job,'SIGCONT')

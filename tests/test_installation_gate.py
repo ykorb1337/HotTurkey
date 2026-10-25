@@ -121,6 +121,7 @@ class GateTests(unittest.TestCase):
             stack.enter_context(patch.object(production,'trusted_directory',side_effect=Path))
             stack.enter_context(patch.object(production,'trusted_path',side_effect=Path))
             stack.enter_context(patch('hotturkey.installation_gate.InstallationGate'))
+            stack.enter_context(patch('hotturkey.service_lease.ServiceLease'))
             migrate=stack.enter_context(patch.object(production,'PolicyAuthority',side_effect=AssertionError('Implicit migration')))
             with self.assertRaisesRegex(ValueError,'must be migrated'):production.production_server()
             migrate.assert_not_called()

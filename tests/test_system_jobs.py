@@ -84,6 +84,19 @@ class JobTests(unittest.TestCase):
         self.assertTrue(self.control.unload(self.job))
         self.assertEqual([args[1] for args,_ in self.runner.calls if args[1]!='print'],['bootout'])
 
+    def test_accepted_bootout_waits_for_async_registration_removal_with_one_deadline(self):
+        self.runner.loaded.add(self.job.target);self.runner.codes[('bootout',self.job.target)]=0
+        now=[0];requested=[False]
+        def effect(command):
+            if command[0]=='bootout':requested[0]=True
+            if requested[0] and now[0]>=.1:self.runner.loaded.discard(self.job.target)
+        self.runner.effect=effect
+        control=jobs._JobControl(lambda:None,lambda _:None,run=self.runner,timeout=1,clock=lambda:now[0],sleep=lambda amount:now.__setitem__(0,now[0]+amount))
+        self.assertTrue(control.unload(self.job));self.assertGreaterEqual(now[0],.1)
+        self.assertEqual(sum(args[1]=='bootout' for args,_ in self.runner.calls),1)
+        self.runner.loaded.add(self.job.target);self.runner.effect=None
+        with self.assertRaises(TimeoutError):control.unload(self.job)
+
     def test_timeouts_propagate_without_reporting_success(self):
         def failure(*args,**values):raise subprocess.TimeoutExpired(args[0],values['timeout'])
         control=jobs._JobControl(lambda:None,lambda _:None,run=failure)
@@ -142,6 +155,36 @@ class JobTests(unittest.TestCase):
             with self.assertRaises(ValueError):jobs.human_account(uid,lambda uid:account(uid))
         for home,name in [('/var/root','root'),('/Users','user'),('/Users/a/../b','real'),('/Users/real','_daemon')]:
             with self.assertRaises(ValueError):jobs.human_account(501,lambda uid:account(uid,home,name))
+
+    def test_failed_process_proof_resumes_the_still_loaded_job(self):
+        self.runner.loaded.add(self.job.target);signals=[]
+        self.control.signal_job=lambda job,signal:signals.append(signal)
+        self.control.running_pid=lambda job:123
+        def failure(pid,uid):raise PermissionError('Wrong kernel owner')
+        with self.assertRaises(PermissionError):self.control.pause_unload(self.job,observe=failure)
+        self.assertEqual(signals,['SIGSTOP','SIGCONT']);self.assertIn(self.job.target,self.runner.loaded)
+    def test_self_or_parent_job_is_never_frozen(self):
+        self.runner.loaded.add(self.job.target);signals=[];self.control.signal_job=lambda job,signal:signals.append(signal)
+        for pid in [os.getpid(),os.getppid()]:
+            self.control.running_pid=lambda job:pid
+            with self.assertRaises(PermissionError):self.control.pause_unload(self.job)
+        self.assertEqual(signals,[])
+
+    def test_process_evidence_is_recorded_before_bootout_and_group_wait(self):
+        self.runner.loaded.add(self.job.target);events=[]
+        observer=SimpleNamespace(confirm_frozen=lambda:events.append('frozen'),wait=lambda remaining:events.append('wait'))
+        self.control.signal_job=lambda job,signal:events.append(signal);self.control.running_pid=lambda job:123
+        self.runner.effect=lambda command:events.append('bootout') if command[0]=='bootout' else None
+        self.assertTrue(self.control.pause_unload(self.job,observe=lambda pid,uid:observer,before_unload=lambda value:events.append('record')))
+        self.assertEqual(events,['SIGSTOP','frozen','record','bootout','wait'])
+
+    def test_documented_pid_output_is_strict_and_never_used_as_a_signal_selector(self):
+        for output in [b'0\n',b'2147483648\n',b'123\nextra',b'pid=123',b'-1',b'123;kill']:
+            self.control.run=lambda *args,**values:SimpleNamespace(returncode=0,stdout=output)
+            with self.subTest(output=output),self.assertRaises((ValueError,RuntimeError)):self.control.running_pid(self.job)
+        self.control.run=lambda *args,**values:SimpleNamespace(returncode=0,stdout=b'123\n')
+        self.assertEqual(self.control.running_pid(self.job),123)
+        with self.assertRaises(ValueError):self.control.signal_job(self.job,'SIGKILL')
 
     def test_production_factory_refuses_unprivileged_use_before_any_paths(self):
         with patch.object(jobs.os,'geteuid',return_value=501),patch.object(jobs,'protected_directory') as directory:

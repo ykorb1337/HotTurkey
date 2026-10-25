@@ -5,6 +5,7 @@ must use fixed targets and a driver that authorizes management, stops the old
 services, rechecks locks, validates private stages and bounds every OS call.
 """
 import copy
+import contextlib
 import hashlib
 import math
 import re
@@ -139,8 +140,15 @@ class CutoverCoordinator:
             if health_matches(value,self.context,required,pending):return
             self.sleep(min(.1,self.check_budget()))
 
+    @contextlib.contextmanager
+    def hold_lock(self):
+        with installation_lock(self.lock_directory,owner_uid=self.owner_uid,anchor=self.anchor) as descriptor:
+            self.driver.installation_lock_fd=descriptor
+            try:yield
+            finally:self.driver.installation_lock_fd=None
+
     def apply(self):
-        with installation_lock(self.lock_directory,owner_uid=self.owner_uid,anchor=self.anchor):
+        with self.hold_lock():
             if pending_cutover(self.lock_directory,owner_uid=self.owner_uid,anchor=self.anchor) is not None:raise FileExistsError('另一安装事务尚未恢复或完成')
             if self.journal.exists() or self.journal.is_symlink() or self.record.exists() or self.record.is_symlink():raise FileExistsError('请先恢复或归档此前的安装事务')
             self.driver.authorize()
@@ -194,7 +202,7 @@ class CutoverCoordinator:
         self.clear_index()
 
     def recover(self):
-        with installation_lock(self.lock_directory,owner_uid=self.owner_uid,anchor=self.anchor):
+        with self.hold_lock():
             temporary=self.index.with_name(self.index.name+'.new')
             unpublished=not (self.index.exists() or self.index.is_symlink()) and (temporary.exists() or temporary.is_symlink())
             index=None if unpublished else pending_cutover(self.lock_directory,owner_uid=self.owner_uid,anchor=self.anchor)

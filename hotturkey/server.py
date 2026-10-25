@@ -22,14 +22,13 @@ def default_data():
 
 class Service:
     def __init__(self,directory,port=0,enforce=False):
-        import fcntl
+        from .service_lease import ServiceLease
         directory=Path(directory)
         directory.mkdir(parents=True,exist_ok=True,mode=0o700)
-        self.singleton=open(directory/"service.lock","a")
-        try:fcntl.flock(self.singleton,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        try:self.service_lease=ServiceLease(directory/'service.lock')
         except BlockingIOError:
-            self.singleton.close()
             raise PolicyError("HotTurkey 服务已在运行") from None
+        self.singleton=self.service_lease.stream
         self.store=Store(directory)
         from .platform_macos import boot_id
         self.engine=Engine(self.store,boot_id=boot_id())

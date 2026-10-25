@@ -114,7 +114,7 @@ def enforce_loop(service):
     if not helper.exists(): raise RuntimeError("Build HotTurkeyAgent first: python3 scripts/build.py")
     command=[str(helper)]
     if service.native_session_initialized:command.append("--resume")
-    process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0)
+    process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0,pass_fds=(service.singleton.fileno(),))
     service.agent_process=process
     service.helper_starts+=1
     e=service.engine

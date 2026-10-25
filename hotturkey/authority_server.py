@@ -344,7 +344,7 @@ def production_server():
     trusted_directory(DATA)
     trusted_directory(SOCKET.parent)
     for path in DATA.iterdir():
-        if path.name not in {'hotturkey.sqlite3','hotturkey.sqlite3-wal','hotturkey.sqlite3-shm'}:
+        if path.name not in {'hotturkey.sqlite3','hotturkey.sqlite3-wal','hotturkey.sqlite3-shm','service.lock'}:
             raise PermissionError('Unexpected protected data entry')
         trusted_path(path)
     from .installation_gate import InstallationGate,MARKER
@@ -353,7 +353,10 @@ def production_server():
     if manifest.stat().st_size>8*1024**2:raise ValueError('Installation manifest too large')
     gate=InstallationGate(MARKER,config['controller_uid'],digest(manifest))
     trusted_path(DATA/'hotturkey.sqlite3')
-    store=Store(DATA)
+    from .service_lease import ServiceLease
+    lease=ServiceLease(DATA/'service.lock',owner_uid=0)
+    try:store=Store(DATA)
+    except BaseException:lease.close();raise
     try:
         if store.state.get('authority_version')!=1 or store.state.get('controller_uid')!=config['controller_uid']:
             raise ValueError('Protected data must be migrated by the installer before startup')
@@ -361,14 +364,17 @@ def production_server():
         authority=PolicyAuthority(store,config['controller_uid'],boot_id=boot_id(),installation_gate=gate)
         authority.engine(authority.controller_uid)
         from .system_enforcement import SystemExecution
-        execution=SystemExecution(authority,executor,protected_paths=[INSTALL])
+        execution=SystemExecution(authority,executor,protected_paths=[INSTALL],lease=lease)
         from .trusted_sessions import TrustedSessions
         sessions=TrustedSessions(authority,execution)
         from .trusted_browsers import TrustedBrowsers
         browsers=TrustedBrowsers(authority,execution,sessions)
-        return AuthorityServer(authority,SOCKET,lambda connection:authenticated_roles(connection,checker,requirements),execution=execution,sessions=sessions,browsers=browsers)
+        server=AuthorityServer(authority,SOCKET,lambda connection:authenticated_roles(connection,checker,requirements),execution=execution,sessions=sessions,browsers=browsers)
+        server.service_lease=lease
+        return server
     except BaseException:
         store.db.close()
+        lease.close()
         raise
 
 
@@ -378,7 +384,9 @@ def main():
         server.bind()
         for number in [signal.SIGTERM,signal.SIGINT]:signal.signal(number,lambda *_:server.stop())
         server.serve_forever()
-    finally:server.authority.store.db.close()
+    finally:
+        server.authority.store.db.close()
+        server.service_lease.close()
 
 
 if __name__=='__main__':main()

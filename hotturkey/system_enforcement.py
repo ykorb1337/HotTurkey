@@ -146,11 +146,12 @@ class SystemDecisions:
 
 
 class SystemExecution:
-    def __init__(self,authority,executable,protected_paths=(),simulate_devices=False):
+    def __init__(self,authority,executable,protected_paths=(),simulate_devices=False,lease=None):
         self.authority=authority
         self.executable=Path(executable)
         self.protected_paths=tuple(protected_paths)
         self.process=None
+        self.lease=lease
         self.last_sample=None
         self.state='not-started'
         self.inventory={}
@@ -170,7 +171,8 @@ class SystemExecution:
 
     def run(self,stop):
         self.state='starting'
-        process=subprocess.Popen([str(self.executable)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0)
+        process=subprocess.Popen([str(self.executable)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0,
+                                 pass_fds=() if self.lease is None else (self.lease.fileno(),))
         self.process=process
         decisions=SystemDecisions(self.authority,self.protected_paths,self.simulate_devices,self.device_gate)
         try:

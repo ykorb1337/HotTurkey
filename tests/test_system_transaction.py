@@ -2,6 +2,8 @@ import json
 import os
 import tempfile
 import unittest
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 from unittest.mock import patch
@@ -132,6 +134,16 @@ class TransactionTests(unittest.TestCase):
         lock=self.journals/'install.lock';lock.unlink();lock.symlink_to(self.root/'unexpected')
         with self.assertRaises(OSError):
             with installation_lock(self.journals,owner_uid=os.getuid(),anchor=self.root):pass
+    def test_worker_inherits_install_lock_until_it_exits_even_after_parent_context_closes(self):
+        with installation_lock(self.journals,owner_uid=os.getuid(),anchor=self.root) as descriptor:
+            child=subprocess.Popen([sys.executable,'-B','-c','import time;time.sleep(30)'],pass_fds=(descriptor,))
+        try:
+            with self.assertRaises(RuntimeError):
+                with installation_lock(self.journals,owner_uid=os.getuid(),anchor=self.root):pass
+            child.terminate();child.wait(timeout=5)
+            with installation_lock(self.journals,owner_uid=os.getuid(),anchor=self.root):pass
+        finally:
+            if child.poll() is None:child.kill();child.wait(timeout=5)
 
 
 if __name__=='__main__':unittest.main()

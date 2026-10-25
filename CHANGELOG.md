@@ -2,13 +2,25 @@
 
 ## Unreleased
 
+- Assemble the fixed-target protected cutover driver: private credential
+  approval and stopped-data rechecks, sealed staging with durability flushes,
+  exact activation health, precommit restoration and postcommit continuation.
+  Native executors inherit backend data leases. Handoff freezes only managed
+  jobs, records kernel process groups and requires exit before migration;
+  failed checks resume the old job. Bounded staging inherits the installation
+  lock so coordinator death cannot race recovery against a surviving writer.
+  Real disposable launchd jobs and driver SIGKILL tests exercise these paths.
+  Privileged entry, consistent live preflight capture, independent recovery,
+  browser/user adoption and protected uninstall remain pending. No root
+  installation or physical sleep was performed.
+
 - Add fixed launchd job operations for the future system installer: root-only
   production construction, bounded queries and whole operations, GUI-domain
   discovery, exact canonical plans and private legacy restore plans. Never
   parse diagnostic output or unload a whole domain; unknown errors fail closed.
   Real disposable signed-session supervision now uses the shared operations.
   Job removal alone does not prove process exit, and the full production
-  cutover driver, authorization/bootstrap recovery and root deployment remain
+  authorization/bootstrap recovery and root deployment remain
   pending. The existing current-user installer lock behavior is unchanged.
 
 - Add a durable service-cutover coordinator with a global pending-transaction
@@ -17,8 +29,8 @@
   restoration intent. Before commit it restores old files/services; after
   commit it only finishes activation, preserving accepted policy/usage changes.
   Real disposable services and coordinator SIGKILL tests exercise both paths.
-  The production launchd driver, bootstrap recovery and privileged installation
-  remain pending; these tests never install root services or invoke sleep.
+  Bootstrap recovery and privileged installation remain pending; these tests
+  never install root services or invoke sleep.
 
 - Atomically exchange existing installation directories with macOS
   `RENAME_SWAP`, retaining the startup path across publication and rollback.
@@ -32,7 +44,7 @@
   probes work but policy operations, automatic starts, usage and process/device
   actions remain paused. Reject marker replacement, missing/invalid state and
   reversal after commit. Production startup now requires this marker; the
-  production service driver and privileged deployment remain pending.
+  privileged entry and deployment remain pending.
 
 - Add non-privileged preparation and inspection of a protected-service payload:
   inventory integrity, sealed system-mode app, fixed isolated-Python startup,
@@ -40,7 +52,7 @@
   signer/extension bindings. Add private no-follow SQLite migration preserving
   rules, credentials, statistics and spent allowances, plus durable file-swap
   transactions with interruption recovery and a commit barrier. These are
-  tested installation components; production service cutover, an installer and
+  tested installation components; a complete production installer and
   real privileged deployment are still pending.
 
 - Add weekly scheduled sleep with an explicit inactive default, a mandatory
