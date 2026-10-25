@@ -142,7 +142,7 @@ async function action(a,el){if(!allowedAction(a))throw Error('此账户可查看
  if(a==='new')return editBlock();if(a==='edit')return editBlock(id);
  if(a==='setup')return setup();
  if(a==='install-backend'){if(!window.webkit?.messageHandlers?.native)throw Error('请在 macOS 桌面应用中安装后台');const ids=($('#install-extension-ids')?.value||'').split(/[\s,]+/).filter(Boolean);if(ids.some(id=>!/^[a-p]{32}$/.test(id)))throw Error('扩展 ID 应为 32 位 a–p 字母');el.disabled=true;window.webkit.messageHandlers.native.postMessage({op:'install',extensionIDs:ids});return;}
- if(a==='toggle'){const yes=b.device==='none'||confirm(`启用“${b.name}”将执行${{lock:'锁屏',sleep:'睡眠',logout:'注销',shutdown:'关机'}[b.device]}。${b.mode==='continuous'?'，持续 '+(b.device_minutes||15)+' 分钟并自动定时锁定':''}。确认启用？`);if(yes)await api('blocks/toggle',{id,confirm_device:b.device!=='none'});}
+ if(a==='toggle'){const enabled=!b.enabled;const yes=!enabled||b.device==='none'||confirm(`启用“${b.name}”将执行${{lock:'锁屏',sleep:'睡眠',logout:'注销',shutdown:'关机'}[b.device]}。${b.mode==='continuous'?'持续 '+(b.device_minutes||15)+' 分钟并自动定时锁定。':''}确认启用？`);if(yes)await api('blocks/toggle',{id,enabled,confirm_device:b.device!=='none'});}
  if(a==='duplicate'){await api('blocks/duplicate',{id,name:b.name+' 副本 '+String(Date.now()).slice(-4)});toast('已复制为停用规则');}
  if(a==='delete'&&confirm(`删除“${b.name}”？`))await api('blocks/delete',{id});
  if(a==='editor-tab'){collectEditor();tab=el.dataset.tab;return renderEditor();}

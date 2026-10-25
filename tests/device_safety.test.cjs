@@ -8,7 +8,7 @@ const context={state:{authenticated:true,settings:{device_recovery_hash:false},b
  refresh:async()=>{},closeModal:()=>{closed++;},toast:()=>{},confirm:()=>confirmation,
  newBlock:()=>({break:{type:'none'},websites:[]}),minute:value=>Number(value.split(':')[0])*60+Number(value.split(':')[1]),
  openModal:(title,body)=>{opened=body;},field:(title,body)=>title+body,btn:()=>'',dateTime:String,
- hm:String,DAY:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],editorImport:null};
+ hm:String,DAY:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],editorImport:null,page:'blocks'};
 vm.createContext(context);
 for(const name of ['canManage','allowedAction'])vm.runInContext(source.match(new RegExp(`function ${name}\\([^\\n]+`))[0],context);
 vm.runInContext(source.slice(source.indexOf('function deviceWizard('),source.indexOf('function theme(')),context);
@@ -18,7 +18,7 @@ function reset(){
  fields={'#device-word-confirmed':{checked:true},'#device-start':{value:'23:00'},'#device-end':{value:'07:00'},
  '#device-name':{value:'Rest'},'#device-enabled':{checked:false},'#device-word':{value:'fixture-escape'},'#device-word-repeat':{value:'fixture-escape'}};
 }
-const act=a=>context.action(a,{dataset:{}});let count=0;
+const act=(a,id)=>context.action(a,{dataset:{id}});let count=0;
 (async()=>{
  reset();context.deviceWizard();assert(opened.includes('紧急安全词'));assert(opened.includes('30 秒'));assert(!opened.includes('id="device-enabled" type="checkbox" checked'));count++;
  fields['#device-word-confirmed'].checked=false;await assert.rejects(()=>act('save-device'));assert.equal(calls.length,0);count++;
@@ -33,5 +33,8 @@ const act=a=>context.action(a,{dataset:{}});let count=0;
  calls=[];context.state.can_manage=true;fields['#device-stop-plan']={checked:true};confirmation=false;await act('device-emergency-submit');assert.equal(calls.length,0);
  confirmation=true;await act('device-emergency-submit');assert.equal(calls[0].data.stop_plan,true);
  context.state.can_manage=true;fields['#recovery-new']={value:'new-safety'};fields['#recovery-repeat']={value:'mismatch'};await assert.rejects(()=>act('device-recovery-save'));count++;
+ reset();context.state.blocks=[{id:'sleep',name:'Rest',enabled:true,device:'sleep'}];confirmation=false;
+ await act('toggle','sleep');assert.equal(calls.length,1);assert.equal(calls[0].data.enabled,false);
+ calls=[];context.state.blocks[0].enabled=false;await act('toggle','sleep');assert.equal(calls.length,0);count++;
  console.log(`${count} device safety, inactive defaults, confirmation, secret isolation and emergency access checks passed`);
 })().catch(error=>{console.error(error);process.exitCode=1;});
