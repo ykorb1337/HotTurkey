@@ -37,6 +37,56 @@ def atomic_exchange(left,right):
 def file_identity(info):return [info.st_dev,info.st_ino]
 
 
+def protected_directory(path,owner_uid=0,anchor=Path('/')):
+    path=Path(path);anchor=Path(anchor)
+    if not anchor.is_absolute() or '..' in anchor.parts or not path.is_absolute() or '..' in path.parts or not path.is_relative_to(anchor):raise PermissionError('事务路径越过信任边界')
+    while True:
+        info=path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid!=owner_uid or info.st_mode&0o022:raise PermissionError('事务目录不是受保护路径')
+        if path==anchor:break
+        path=path.parent
+
+
+def owned_entry(path,owner_uid=0):
+    info=Path(path).lstat()
+    if (info.st_uid!=owner_uid or info.st_mode&0o022
+            or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))
+            or stat.S_ISREG(info.st_mode) and info.st_nlink!=1):raise PermissionError('事务项目不是受保护的普通文件或目录')
+    return info
+
+
+def read_private_record(path,*,owner_uid=0,anchor=Path('/'),validate=None):
+    path=Path(path);protected_directory(path.parent,owner_uid,anchor)
+    temporary=path.with_name(path.name+'.new');info=path.lstat()
+    # Initial exclusive publication may leave exactly these two hard links.
+    if stat.S_ISREG(info.st_mode) and info.st_nlink==2 and temporary.exists() and not temporary.is_symlink():
+        other=temporary.lstat()
+        if file_identity(info)==file_identity(other) and info.st_uid==owner_uid and not info.st_mode&0o077:
+            temporary.unlink();sync_directory(path.parent)
+    info=owned_entry(path,owner_uid)
+    if not stat.S_ISREG(info.st_mode) or info.st_size>1024*1024:raise ValueError('事务记录大小或类型无效')
+    value=decode_json(path.read_bytes())
+    if validate is not None:validate(value)
+    if temporary.exists() or temporary.is_symlink():
+        if not stat.S_ISREG(owned_entry(temporary,owner_uid).st_mode):raise PermissionError('临时事务记录不是普通文件')
+        temporary.unlink();sync_directory(path.parent)
+    return value
+
+
+def write_private_record(path,value,*,initial=False,owner_uid=0,anchor=Path('/')):
+    path=Path(path);protected_directory(path.parent,owner_uid,anchor)
+    if not initial and not stat.S_ISREG(owned_entry(path,owner_uid).st_mode):raise PermissionError('事务记录不是普通文件')
+    temporary=path.with_name(path.name+'.new')
+    descriptor=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    try:
+        with os.fdopen(descriptor,'w') as stream:
+            json.dump(value,stream,sort_keys=True,allow_nan=False);stream.flush();os.fsync(stream.fileno())
+        if initial:os.link(temporary,path,follow_symlinks=False)
+        else:os.replace(temporary,path)
+        sync_directory(path.parent)
+    finally:temporary.unlink(missing_ok=True)
+
+
 class FileTransaction:
     def __init__(self,journal,targets,*,owner_uid=0,anchor=Path('/'),resume=False):
         self.journal=Path(journal);self.targets={key:Path(path) for key,path in targets.items()}
@@ -51,48 +101,27 @@ class FileTransaction:
             self.check_directory(path.parent)
             if path==self.anchor or path==self.journal or self.journal.is_relative_to(path):raise ValueError('事务目标覆盖日志或信任边界')
         if resume:
-            temporary=self.journal.with_name(self.journal.name+'.new')
-            info=self.journal.lstat()
-            # Initial publication uses an exclusive hard link. A crash before
-            # unlinking the temp can legitimately leave exactly these two names.
-            if stat.S_ISREG(info.st_mode) and info.st_nlink==2 and temporary.exists() and not temporary.is_symlink():
-                other=temporary.lstat()
-                if file_identity(info)==file_identity(other) and info.st_uid==self.owner_uid and not info.st_mode&0o077:
-                    temporary.unlink();sync_directory(self.journal.parent)
-            info=self.check_owned(self.journal)
-            if not stat.S_ISREG(info.st_mode) or info.st_size>1024*1024:raise ValueError('事务日志大小或类型无效')
-            self.value=decode_json(self.journal.read_bytes());self.validate_journal()
-            self.remove_owned(self.journal.with_name(self.journal.name+'.new'))
+            self.value=read_private_record(self.journal,owner_uid=owner_uid,anchor=anchor,validate=self.validate_journal)
         else:
             self.value={'version':2,'id':uuid.uuid4().hex,'status':'active','targets':{key:str(path) for key,path in self.targets.items()},'steps':[]}
             self.save(initial=True)
 
     def check_directory(self,path):
-        if not path.is_absolute() or '..' in path.parts or not path.is_relative_to(self.anchor):raise PermissionError('事务路径越过信任边界')
-        while True:
-            info=path.lstat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid!=self.owner_uid or info.st_mode&0o022:raise PermissionError('事务目录不是受保护路径')
-            if path==self.anchor:break
-            path=path.parent
+        protected_directory(path,self.owner_uid,self.anchor)
 
     def check_owned(self,path):
-        info=path.lstat()
-        if (info.st_uid!=self.owner_uid or info.st_mode&0o022
-                or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))
-                or stat.S_ISREG(info.st_mode) and info.st_nlink!=1):raise PermissionError('事务项目不是受保护的普通文件或目录')
-        return info
+        return owned_entry(path,self.owner_uid)
 
-    def validate_journal(self):
-        value=self.value
+    def validate_journal(self,value):
         if (not isinstance(value,dict) or set(value)!={'version','id','status','targets','steps'} or type(value['version']) is not int or value['version'] not in {1,2}
                 or not isinstance(value['id'],str) or not re.fullmatch('[a-f0-9]{32}',value['id'])
-                or value['status'] not in {'active','committing','committed','rolled-back'}
+                or not isinstance(value['status'],str) or value['status'] not in {'active','committing','committed','rolled-back'}
                 or value['targets']!={key:str(path) for key,path in self.targets.items()} or not isinstance(value['steps'],list)):
             raise ValueError('安装事务日志无效')
         keys=set()
         for step in value['steps']:
             fields={'key','stage','had_original','rolled_back'}|({'old_identity','new_identity'} if value['version']==2 else set())
-            if (not isinstance(step,dict) or set(step)!=fields or step['key'] not in self.targets
+            if (not isinstance(step,dict) or set(step)!=fields or not isinstance(step['key'],str) or step['key'] not in self.targets
                     or step['key'] in keys or not isinstance(step['stage'],str) or not re.fullmatch(r'\.hotturkey-stage-[a-f0-9]{32}',step['stage'])
                     or type(step['had_original']) is not bool or type(step['rolled_back']) is not bool):raise ValueError('安装事务步骤无效')
             if value['version']==2:
@@ -105,16 +134,7 @@ class FileTransaction:
             keys.add(step['key'])
 
     def save(self,initial=False):
-        # A fixed sibling temp is safe only inside the protected journal folder.
-        temporary=self.journal.with_name(self.journal.name+'.new')
-        descriptor=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-        try:
-            with os.fdopen(descriptor,'w') as stream:
-                json.dump(self.value,stream,sort_keys=True);stream.flush();os.fsync(stream.fileno())
-            if initial:os.link(temporary,self.journal,follow_symlinks=False)
-            else:os.replace(temporary,self.journal)
-            sync_directory(self.journal.parent)
-        finally:temporary.unlink(missing_ok=True)
+        write_private_record(self.journal,self.value,initial=initial,owner_uid=self.owner_uid,anchor=self.anchor)
 
     def paths(self,step):
         target=self.targets[step['key']]
@@ -212,8 +232,7 @@ class FileTransaction:
 @contextlib.contextmanager
 def installation_lock(directory,*,owner_uid=0,anchor=Path('/')):
     directory=Path(directory)
-    # Reuse ancestor checks without creating a transaction.
-    guard=object.__new__(FileTransaction);guard.owner_uid=owner_uid;guard.anchor=Path(anchor);guard.check_directory(directory)
+    protected_directory(directory,owner_uid,Path(anchor))
     descriptor=os.open(directory/'install.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
     try:
         info=os.fstat(descriptor)

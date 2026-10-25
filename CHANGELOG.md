@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add a durable service-cutover coordinator with a global pending-transaction
+  index, bounded health checks bound to the payload/transaction and current
+  signed session transports, reserved staging paths and persisted service
+  restoration intent. Before commit it restores old files/services; after
+  commit it only finishes activation, preserving accepted policy/usage changes.
+  Real disposable services and coordinator SIGKILL tests exercise both paths.
+  The production launchd driver, bootstrap recovery and privileged installation
+  remain pending; these tests never install root services or invoke sleep.
+
 - Atomically exchange existing installation directories with macOS
   `RENAME_SWAP`, retaining the startup path across publication and rollback.
   Version-2 journals record old/new file identities, reject partial commits
@@ -14,7 +23,7 @@
   probes work but policy operations, automatic starts, usage and process/device
   actions remain paused. Reject marker replacement, missing/invalid state and
   reversal after commit. Production startup now requires this marker; the
-  actual installation coordinator and privileged deployment remain pending.
+  production service driver and privileged deployment remain pending.
 
 - Add non-privileged preparation and inspection of a protected-service payload:
   inventory integrity, sealed system-mode app, fixed isolated-Python startup,
@@ -22,7 +31,7 @@
   signer/extension bindings. Add private no-follow SQLite migration preserving
   rules, credentials, statistics and spent allowances, plus durable file-swap
   transactions with interruption recovery and a commit barrier. These are
-  tested installation components; service cutover, a production installer and
+  tested installation components; production service cutover, an installer and
   real privileged deployment are still pending.
 
 - Add weekly scheduled sleep with an explicit inactive default, a mandatory

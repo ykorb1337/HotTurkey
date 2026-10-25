@@ -59,9 +59,10 @@ class PolicyRPC:
                 gate=self.authority.installation_gate
                 age=execution.get('last_sample_age')
                 ready=execution.get('status')=='running' and type(age) in {float,int} and 0<=age<3
-                fresh=(gate.session_fresh(identity.uid) if gate and not active else self.sessions is not None and self.sessions.status(identity.uid).get('status')=='running')
+                uids=gate.transport_uids() if gate and not active else self.sessions.transport_uids() if self.sessions else []
                 return {'installation_pending':not active,'executor_ready':ready,
-                        'session_transport_fresh':fresh}
+                        'session_transport_fresh':identity.uid in uids,'session_transport_uids':uids,
+                        'installation_transaction':gate.transaction if gate else None,'payload_sha256':gate.payload_sha256 if gate else None}
             if not active and not (identity.role=='session' and operation=='session-sample'):
                 raise PolicyError('系统安装尚未提交，请稍后重试')
             if operation in {'document-read','document-cancel','document-start','document-chunk','document-finish'}:

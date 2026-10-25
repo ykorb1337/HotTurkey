@@ -57,7 +57,8 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(PermissionError):InstallationGate(self.marker,501,'a'*64,owner_uid=os.getuid()+1,anchor=self.root)
     def test_health_is_scoped_minimal_and_does_not_require_settings_credentials(self):
         self.store.state['settings']['protect_overview']=True
-        self.assertEqual(self.call('installation-health'),{'installation_pending':True,'executor_ready':False,'session_transport_fresh':False})
+        self.assertEqual(self.call('installation-health'),{'installation_pending':True,'executor_ready':False,'session_transport_fresh':False,
+            'session_transport_uids':[],'installation_transaction':'b'*32,'payload_sha256':'a'*64})
         for peer in [PeerIdentity(502,20,124,b'y'*32),PeerIdentity(501,20,124,b'y'*32,'session'),PeerIdentity(501,20,124,b'y'*32,'browser')]:
             with self.assertRaises(PolicyError):self.call('installation-health',peer=peer)
         for values in [{'data':{'uid':502}},{'session':'copied-session'},{'path':'/tmp/marker'}]:

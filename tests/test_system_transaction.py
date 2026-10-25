@@ -105,6 +105,13 @@ class TransactionTests(unittest.TestCase):
         value['targets']['program']=str(self.targets['program']);value['steps']=[{'key':'program','stage':'../../etc/hosts','had_original':False,'rolled_back':False}]
         self.journal.write_text(json.dumps(value))
         with self.assertRaises(ValueError):self.transaction(True)
+    def test_malformed_record_types_are_rejected_before_filesystem_actions(self):
+        transaction=self.transaction();base=transaction.value
+        bad_step={'key':[],'stage':'.hotturkey-stage-'+'a'*32,'had_original':False,'rolled_back':False,'old_identity':None,'new_identity':[1,2]}
+        for value in [None,[],{**base,'status':[]},{**base,'steps':[bad_step]}]:
+            self.journal.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):self.transaction(True)
+        self.assertFalse(any(path.exists() for path in self.targets.values()))
     def test_links_writable_targets_and_foreign_stages_are_rejected(self):
         transaction=self.transaction();external=self.root/'outside';external.write_text('keep');self.targets['program'].symlink_to(external)
         with self.assertRaises(PermissionError):transaction.publish('program',self.stage('new'))

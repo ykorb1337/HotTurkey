@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .ipc import decode_json
-from .system_transaction import FileTransaction
+from .system_transaction import protected_directory
 
 MARKER=Path('/private/var/db/local.hotturkey-install/activation.json')
 
@@ -26,8 +26,7 @@ class InstallationGate:
         value=self.read();self.transaction=value['transaction'];self.committed=value['phase']=='committed'
 
     def read(self):
-        guard=object.__new__(FileTransaction);guard.owner_uid=self.owner_uid;guard.anchor=self.anchor
-        guard.check_directory(self.path.parent)
+        protected_directory(self.path.parent,self.owner_uid,self.anchor)
         descriptor=os.open(self.path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
         try:
             info=os.fstat(descriptor)
@@ -59,3 +58,7 @@ class InstallationGate:
     def session_fresh(self,uid):
         age=self.clock()-self.probes.get(uid,-1e30)
         return 0<=age<=5
+
+    def transport_uids(self):
+        now=self.clock()
+        return sorted(uid for uid,at in self.probes.items() if 0<=now-at<=5)

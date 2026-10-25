@@ -44,6 +44,10 @@ class TrustedSessions:
         return {'status':'running' if age<=3 else 'stale','last_sample_age':age,
                 'on_console':lease['console'] if age<=3 else False,'desktop_login':self.desktop.status(uid)}
 
+    def transport_uids(self):
+        now=self.authority.clock()
+        return sorted(uid for uid,lease in self.leases.items() if 0<=now-lease['at']<=3)
+
     def activity(self,uid):
         """Private root-side context for browser accounting, never an RPC result."""
         lease=self.leases.get(uid)
