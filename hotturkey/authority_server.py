@@ -51,6 +51,19 @@ class PolicyRPC:
         with self.authority.store.lock:
             if not isinstance(request,dict):raise PolicyError('请求内容无效')
             operation=_text(request.get('op'),32,'操作');session=_text(request.get('session',''),128,'会话')
+            active=self.authority.installation_active()
+            if operation=='installation-health':
+                if (set(request)-{'op','data','session'} or request.get('data',{})!={} or session
+                        or identity.role!='client' or identity.uid!=self.authority.controller_uid):raise PolicyError('安装健康检查需要管理账户的原生客户端')
+                execution=self.execution.status() if self.execution else {'status':'not-connected'}
+                gate=self.authority.installation_gate
+                age=execution.get('last_sample_age')
+                ready=execution.get('status')=='running' and type(age) in {float,int} and 0<=age<3
+                fresh=(gate.session_fresh(identity.uid) if gate and not active else self.sessions is not None and self.sessions.status(identity.uid).get('status')=='running')
+                return {'installation_pending':not active,'executor_ready':ready,
+                        'session_transport_fresh':fresh}
+            if not active and not (identity.role=='session' and operation=='session-sample'):
+                raise PolicyError('系统安装尚未提交，请稍后重试')
             if operation in {'document-read','document-cancel','document-start','document-chunk','document-finish'}:
                 result=self.document_request(identity,request)
             else:result=self._dispatch(identity,request)
@@ -253,6 +266,7 @@ class AuthorityServer:
             try:
                 with self.authority.store.lock:
                     self.rpc.documents.prune()
+                    if not self.authority.installation_active():continue
                     # No JSON-provided IDs create ticking account contexts.
                     for engine in list(self.authority.engines.values()):engine.tick()
             except Exception:
@@ -332,10 +346,18 @@ def production_server():
         if path.name not in {'hotturkey.sqlite3','hotturkey.sqlite3-wal','hotturkey.sqlite3-shm'}:
             raise PermissionError('Unexpected protected data entry')
         trusted_path(path)
+    from .installation_gate import InstallationGate,MARKER
+    from .system_package import digest
+    manifest=trusted_path(INSTALL/'payload.json')
+    if manifest.stat().st_size>8*1024**2:raise ValueError('Installation manifest too large')
+    gate=InstallationGate(MARKER,config['controller_uid'],digest(manifest))
+    trusted_path(DATA/'hotturkey.sqlite3')
     store=Store(DATA)
     try:
+        if store.state.get('authority_version')!=1 or store.state.get('controller_uid')!=config['controller_uid']:
+            raise ValueError('Protected data must be migrated by the installer before startup')
         from .platform_macos import boot_id
-        authority=PolicyAuthority(store,config['controller_uid'],boot_id=boot_id())
+        authority=PolicyAuthority(store,config['controller_uid'],boot_id=boot_id(),installation_gate=gate)
         authority.engine(authority.controller_uid)
         from .system_enforcement import SystemExecution
         execution=SystemExecution(authority,executor,protected_paths=[INSTALL])

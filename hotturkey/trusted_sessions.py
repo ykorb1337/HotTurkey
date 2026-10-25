@@ -73,6 +73,9 @@ class TrustedSessions:
         self.authority._account(uid)
         asid=self.session_identity(identity)
         with self.authority.store.lock:
+            if not self.authority.installation_active():
+                self.authority.installation_gate.observe_session(uid)
+                return {'accepted':False,'installation_pending':True}
             now=self.authority.clock();old=self.leases.get(uid)
             owner=(identity.pid,identity.audit_token)
             same=old is not None and old['owner']==owner

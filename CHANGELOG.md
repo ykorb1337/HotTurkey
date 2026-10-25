@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a protected activation barrier binding a root-owned marker to the exact
+  payload, transaction and controller. Until commit, signed health/session
+  probes work but policy operations, automatic starts, usage and process/device
+  actions remain paused. Reject marker replacement, missing/invalid state and
+  reversal after commit. Production startup now requires this marker; the
+  actual installation coordinator and privileged deployment remain pending.
+
 - Add non-privileged preparation and inspection of a protected-service payload:
   inventory integrity, sealed system-mode app, fixed isolated-Python startup,
   actual native role hashes, restricted-runtime checks and explicit browser

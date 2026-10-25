@@ -95,6 +95,9 @@ class SystemDecisions:
             acknowledgements.add(token)
         if acknowledgements!=set(self.pending):raise ValueError('Missing execution acknowledgement')
         with self.authority.store.lock:
+            if not self.authority.installation_active():
+                self.pending={};self.pending_device=None
+                return {'kill':[]}
             now=self.authority.clock()
             self.device_result=device_result
             self.recorded={token:until for token,until in self.recorded.items() if until>now}

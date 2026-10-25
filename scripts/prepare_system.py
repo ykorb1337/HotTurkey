@@ -11,9 +11,10 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 from hotturkey.ipc import decode_json
-from hotturkey.system_package import (DAEMON,DATA,INSTALL,SOCKET_DIRECTORY,browser_binding,
+from hotturkey.system_package import (DAEMON,DATA,INSTALL,SOCKET_DIRECTORY,browser_binding,digest,
                                       prepare_payload,verify_payload)
 from hotturkey.session_launch import SESSION_PLIST
+from hotturkey.installation_gate import MARKER
 
 
 def main():
@@ -37,10 +38,10 @@ def main():
             if not isinstance(choice,dict) or set(choice)!={'app','origins'}:parser.error('浏览器配置字段无效')
             bindings[name]=browser_binding(name,choice['app'],choice['origins'])
         directory=args.output;value=prepare_payload(args.app_source,directory,args.controller_uid,bindings)
-    review={'payload':str(directory.absolute()),'controller_uid':value['controller_uid'],'app_version':value['app_version'],
+    review={'payload':str(directory.absolute()),'payload_sha256':digest(directory/'payload.json'),'controller_uid':value['controller_uid'],'app_version':value['app_version'],
             'file_entries':len(value['files']),'total_bytes':sum(entry.get('size',0) for entry in value['files'].values()),
             'planned_paths':{'program':str(INSTALL),'database':str(DATA),'socket_directory':str(SOCKET_DIRECTORY),
-                             'daemon':str(DAEMON),'session_agent':str(SESSION_PLIST)},
+                             'daemon':str(DAEMON),'session_agent':str(SESSION_PLIST),'activation_marker':str(MARKER)},
             'system_files_written':False,'services_loaded':False,'rules_read_or_changed':False}
     print(json.dumps(review,ensure_ascii=False,indent=2))
 

@@ -9,6 +9,13 @@ enforcement.
 
 ## Implemented
 
+- Production activation now requires a protected marker outside the policy
+  directory, bound to the exact payload inventory hash, controller and
+  transaction. A pending authority exposes only an attested controller health
+  probe plus passive session transport probes. Its policy clock, process/device
+  decisions, usage and login delivery do not run before commit. Missing,
+  replaced or regressed markers stop execution. The marker has no RPC writer;
+  its production installer/coordinator is still pending.
 - Scheduled sleep now has a mandatory user-chosen recovery word and a
   30-second console/wake countdown. The kernel executor accepts only a fixed
   sleep action, checks the console UID again immediately before requesting

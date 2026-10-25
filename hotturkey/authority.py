@@ -114,7 +114,7 @@ class AccountStore:
 
 
 class PolicyAuthority:
-    def __init__(self, store, controller_uid, *, resolve_user=pwd.getpwuid, boot_id='test-boot', wall=None, monotonic=None):
+    def __init__(self, store, controller_uid, *, resolve_user=pwd.getpwuid, boot_id='test-boot', wall=None, monotonic=None,installation_gate=None):
         if isinstance(controller_uid,bool) or not isinstance(controller_uid,int) or controller_uid<500:
             raise PolicyError('管理账户 UID 无效')
         self.store=store
@@ -128,8 +128,11 @@ class PolicyAuthority:
         self.sessions={}
         self.auth_retry=0
         self.engines={}
+        self.installation_gate=installation_gate
         self._account(controller_uid)
         self._migrate()
+
+    def installation_active(self):return self.installation_gate is None or self.installation_gate.is_open()
 
     def _migrate(self):
         """Migrate a copied per-user database in one SQLite transaction."""
