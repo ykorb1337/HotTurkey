@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add non-privileged preparation and inspection of a protected-service payload:
+  inventory integrity, sealed system-mode app, fixed isolated-Python startup,
+  actual native role hashes, restricted-runtime checks and explicit browser
+  signer/extension bindings. Add private no-follow SQLite migration preserving
+  rules, credentials, statistics and spent allowances, plus durable file-swap
+  transactions with interruption recovery and a commit barrier. These are
+  tested installation components; service cutover, a production installer and
+  real privileged deployment are still pending.
+
 - Add weekly scheduled sleep with an explicit inactive default, a mandatory
   user-chosen safety word and a 30-second recovery countdown before each new
   interval, console switch or wake. A native recovery surface and persistent

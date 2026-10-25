@@ -30,11 +30,13 @@ jobs:
           node tests/system_desktop.test.cjs
           node tests/device_safety.test.cjs
           node --check web/app.js
-      - name: Native development build
-        run: python3 scripts/build.py --qa --system-python
+      - name: Native build with verified bundled runtime
+        run: python3 scripts/build.py --qa
       - name: Real signed peers and policy RPC
         run: |
           python3 tests/integration_peer.py
+          python3 tests/integration_system_package.py
+          python3 tests/integration_runtime.py
           python3 tests/integration_authority.py
           python3 tests/integration_system_enforcement.py
           python3 tests/integration_device_gate.py

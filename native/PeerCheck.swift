@@ -19,7 +19,11 @@ if arguments.count==3 && arguments[1]=="--describe" {
     result=SecCodeCopySigningInformation(code,SecCSFlags(rawValue:kSecCSSigningInformation),&information)
     guard result==errSecSuccess,let dictionary=information as? [String:Any],let unique=dictionary[kSecCodeInfoUnique as String] as? Data else { report(["ok":false,"status":result],1) }
     let hash=unique.map { String(format:"%02x",$0) }.joined()
-    report(["ok":true,"cdhash":hash,"requirement":"cdhash H\""+hash+"\""])
+    let signingFlags=(dictionary[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+    let entitlements=dictionary[kSecCodeInfoEntitlementsDict as String] as? [String:Any] ?? [:]
+    let unsafe=["com.apple.security.get-task-allow","com.apple.security.cs.disable-library-validation","com.apple.security.cs.allow-dyld-environment-variables"]
+    let restricted=(signingFlags & 0x10000 != 0) && !unsafe.contains { entitlements[$0] as? Bool == true }
+    report(["ok":true,"cdhash":hash,"requirement":"cdhash H\""+hash+"\"","restricted_runtime":restricted])
 }
 guard arguments.count==5,arguments[1]=="--audit",["--requirement","--roles"].contains(arguments[3]),arguments[4].utf8.count<=4096,let token=Data(base64Encoded:arguments[2]),token.count==32 else { report(["ok":false,"error":"Invalid arguments"],2) }
 var code:SecCode?

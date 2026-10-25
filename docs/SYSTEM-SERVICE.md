@@ -299,6 +299,11 @@ one MiB. The signed test parent is still not a real browser.
    `/private/var/db/local.hotturkey` and
    `/private/var/run/local.hotturkey/control.sock`; no files are placed there by
    the current installer.
+   The preparation tool, sealed payload verification, private SQLite migration
+   and durable filesystem transaction components now exist and have isolated
+   tests; see [the preparation workflow](SYSTEM-INSTALL.md). They do not yet
+   coordinate service cutover, activate an installation or provide a complete
+   production uninstall path.
 4. Validate actual separate macOS accounts, login/logout, sleep/wake, crashes,
    tampering, upgrades and recovery, including ordinary-user bypass attempts.
 5. Complete distribution signing/notarization. Root/admin recovery remains an
