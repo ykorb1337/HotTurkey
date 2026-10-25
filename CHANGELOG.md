@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add fixed launchd job operations for the future system installer: root-only
+  production construction, bounded queries and whole operations, GUI-domain
+  discovery, exact canonical plans and private legacy restore plans. Never
+  parse diagnostic output or unload a whole domain; unknown errors fail closed.
+  Real disposable signed-session supervision now uses the shared operations.
+  Job removal alone does not prove process exit, and the full production
+  cutover driver, authorization/bootstrap recovery and root deployment remain
+  pending. The existing current-user installer lock behavior is unchanged.
+
 - Add a durable service-cutover coordinator with a global pending-transaction
   index, bounded health checks bound to the payload/transaction and current
   signed session transports, reserved staging paths and persisted service

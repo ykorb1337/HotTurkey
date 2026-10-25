@@ -23,6 +23,7 @@ from hotturkey.authority import PolicyAuthority
 from hotturkey.authority_server import AuthorityServer
 from hotturkey.ipc import peer_identity
 from hotturkey.session_launch import session_launch_agent
+from hotturkey.system_jobs import _Job,_JobControl,read_plan
 from hotturkey.store import Store
 from hotturkey.system_enforcement import SystemExecution
 from hotturkey.trusted_sessions import TrustedSessions
@@ -57,10 +58,19 @@ def main():
             thread=threading.Thread(target=serve);thread.start()
             label='local.hotturkey.session.qa.'+uuid.uuid4().hex;target=domain+'/'+label
             plan=session_launch_agent();plan.update(Label=label,ProgramArguments=[str(agent),str(path),str(os.getuid()),'120'])
-            plist=directory/'agent.plist';plist.write_bytes(plistlib.dumps(plan));loaded=False
+            plist=directory/'agent.plist';plist.write_bytes(plistlib.dumps(plan));loaded=False;commands=[]
+            job=_Job(domain,label,plist,plan)
+            def run(arguments,**values):
+                assert arguments[:2] in [['/bin/launchctl','print'],['/bin/launchctl','bootstrap'],['/bin/launchctl','bootout']]
+                if arguments[1]=='bootstrap':assert arguments[2:]==[domain,str(plist)]
+                elif arguments[1]=='bootout':assert arguments[2:]==[target]
+                else:assert arguments[2:] in [[domain],[target]]
+                commands.append(arguments);return subprocess.run(arguments,**values)
+            control=_JobControl(lambda:None,lambda candidate:read_plan(candidate.plist,candidate.expected,owner_uid=os.getuid(),anchor=directory),run=run)
             try:
-                result=subprocess.run(['/bin/launchctl','bootstrap',domain,str(plist)],capture_output=True,timeout=10)
-                assert result.returncode==0,result.stderr.decode();loaded=True
+                assert control.load(job);loaded=True
+                assert control.load(job)
+                assert sum(command[1]=='bootstrap' for command in commands)==1
                 deadline=time.monotonic()+20
                 while not observed and time.monotonic()<deadline:time.sleep(.1)
                 assert observed,'launchd did not deliver an accepted native sample'
@@ -75,14 +85,22 @@ def main():
                 assert store.state.get('trusted_sessions',{})==marker
                 assert sessions.status(os.getuid())['status']=='running'
                 assert store.state['blocks']==[]
-                proof.update(native_supervision_exercised=True,accepted_signed_agent_before_and_after_crash='PASS',audit_login_preserved='PASS',new_kernel_process_identity='PASS')
+                proof.update(native_supervision_exercised=True,accepted_signed_agent_before_and_after_crash='PASS',audit_login_preserved='PASS',new_kernel_process_identity='PASS',
+                             shared_bounded_job_control_exercised=True,idempotent_load='PASS',production_system_driver_tested=False)
             finally:
-                if loaded:
-                    result=subprocess.run(['/bin/launchctl','bootout',target],capture_output=True,timeout=10)
-                    assert result.returncode==0,result.stderr.decode()
-                server.stop();thread.join(timeout=15);assert not thread.is_alive();assert not errors,errors
-                store.db.close()
-            assert subprocess.run(['/bin/launchctl','print',target],capture_output=True,timeout=5).returncode!=0
+                try:
+                    if loaded:assert control.unload(job)
+                    assert not control.unload(job)
+                finally:
+                    # Also clean an uncertain registration if a query timed out
+                    # after bootstrap. This fallback is confined to this test's
+                    # exact random QA label, never a production service/domain.
+                    subprocess.run(['/bin/launchctl','bootout',target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+                    server.stop();thread.join(timeout=15);assert not thread.is_alive();assert not errors,errors
+                    store.db.close()
+            assert not control.loaded(job)
+            assert sum(command[1]=='bootout' for command in commands)==1
+            proof['idempotent_unload']='PASS'
             proof['temporary_launchd_service_removed']='PASS'
     (ROOT/'build/session-supervision-proof.json').write_text(json.dumps(proof,indent=2));print(json.dumps(proof))
 
