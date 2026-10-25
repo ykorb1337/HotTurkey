@@ -126,6 +126,9 @@ class Service:
 
     def api(self,path,method,data,query,headers):
         e=self.engine
+        if path=='/api/device/recover' and method=='POST':
+            if data.get('stop_plan',False) and not self.authorized(headers):raise PolicyError('紧急停用计划需要管理验证；仍可用安全词放行本次时段')
+            return e.recover_device(data.get('word'),data.get('stop_plan',False))
         if path in {'/api/extension/add-site-options','/api/extension/add-site'} and method=='POST':
             from .browser_additions import options,add_site
             with self.store.lock:
@@ -209,6 +212,7 @@ class Service:
                     import pwd
                     return [{"name":p.pw_name,"label":p.pw_gecos} for p in pwd.getpwall() if p.pw_uid>=500 and p.pw_dir.startswith("/Users/") and not p.pw_name.startswith("_")]
             if method=="POST":
+                if path=='/api/device/configure-recovery':return e.configure_device_recovery(data.get('word'),data.get('previous_word'))
                 if path=="/api/blocks/save": return e.save_block(data["block"],data.get("id"))
                 if path=="/api/blocks/add-targets": return e.add_targets(data["id"],data.get("websites"),data.get("applications"))
                 if path=="/api/blocks/reset-pomodoro": return e.reset_pomodoro(data['id'])

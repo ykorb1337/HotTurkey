@@ -9,6 +9,25 @@ enforcement.
 
 ## Implemented
 
+- Scheduled sleep now has a mandatory user-chosen recovery word and a
+  30-second console/wake countdown. The kernel executor accepts only a fixed
+  sleep action, checks the console UID again immediately before requesting
+  sleep and returns a nonce-bound receipt. A successful request does not prove
+  the machine slept. QA binaries compile out physical sleep completely.
+- Each attested session agent can submit a recovery word only for its kernel
+  account. A correct word temporarily releases that account's current device
+  episode, including after authority/helper restart. Controller + settings
+  authorization is additionally required to stop current shared device plans
+  and remove their automatic starts. Other account recovery does not disable
+  shared policy. Credentials are salted hashes, omitted from policy exports
+  and redacted in snapshots. Device recovery requires no settings password.
+- A native recovery surface shows the deadline, accepts the word before and
+  after wake, and removes its overlay after five seconds without fresh trusted
+  updates. The legacy helper keeps its UI run loop responsive while waiting
+  for commands and exits after ten seconds without a complete command. No
+  macOS login credential or authentication mechanism is modified. Actual
+  physical sleep, native recovery interaction, new-user login, cross-account
+  wake and production root installation remain unverified.
 - `PolicyAuthority` owns shared rules and locks, with per-UID usage charges,
   breaks, challenges and statistics. Only the selected local controller account
   can manage policy, and its settings password is checked separately.

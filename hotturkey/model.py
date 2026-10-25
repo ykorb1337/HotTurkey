@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "notifications": True, "warning_minutes": [2, 5], "retention_days": 90,
     "week_start": "monday", "clock_24": True,
     "settings_password": None, "protect_overview": False,
+    "device_recovery_hash":None,
     "open_at_login": False, "start_in_tray": False,
 }
 
@@ -115,7 +116,8 @@ def validate_block(value, previous=None):
     for key in ("websites", "exceptions", "applications"):
         b[key] = lines(b.get(key, []))
     b["users"] = lines(b.get("users", []))
-    b["enabled"] = bool(b.get("enabled", False))
+    if type(b.get('enabled',False)) is not bool:raise PolicyError('启用状态无效')
+    b["enabled"] = b.get("enabled", False)
     b["color"] = b.get("color", "#c3623e")
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", b["color"]):
         raise PolicyError("颜色无效")
@@ -140,7 +142,7 @@ def validate_block(value, previous=None):
         auto["minute"] = integer(auto.get("minute"), 0, 1439, "自动启动分钟")
         auto["days"] = [integer(d,0,6,"星期") for d in auto.get("days",range(7))]
     b["device"] = b.get("device", "none")
-    if b["device"] not in {"none","lock","logout","shutdown"}:
+    if b["device"] not in {"none","lock","sleep","logout","shutdown"}:
         raise PolicyError("设备动作无效")
     b["device_minutes"]=integer(b.get("device_minutes",15),1,1440,"设备拦截分钟")
     return b

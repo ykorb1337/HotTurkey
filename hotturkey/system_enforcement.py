@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import time
+import secrets
 from pathlib import Path
 
 from .model import PolicyError
@@ -28,11 +29,15 @@ def process_identity(value):
 
 
 class SystemDecisions:
-    def __init__(self,authority,protected_paths=()):
+    def __init__(self,authority,protected_paths=(),simulate_devices=False,gate=None):
         self.authority=authority
         self.protected_paths=tuple(str(Path(p)) for p in protected_paths)
         self.pending={}
         self.recorded={}
+        self.pending_device=None;self.device_last={};self.device_result=None
+        self.simulate_devices=simulate_devices
+        from .device_blocks import SleepGate
+        self.gate=gate or SleepGate(authority.engine)
 
     def protected(self,path):
         return any(path==root or path.startswith(root.rstrip('/')+'/') for root in self.protected_paths)
@@ -46,8 +51,22 @@ class SystemDecisions:
         return engine
 
     def consume(self,sample):
-        if not isinstance(sample,dict) or set(sample)!={'apps','front','results'} or sample['front']!={}:
+        base={'apps','front','results'};power={'console_uid','device_result'}
+        if not isinstance(sample,dict) or set(sample) not in [base,base|power,base|power|{'wake_seq'}] or sample['front']!={}:
             raise ValueError('Invalid protected sample')
+        has_power=power<=set(sample)
+        console=sample.get('console_uid',0);device_result=sample.get('device_result')
+        if type(console) is not int or not 0<=console<=4294967295:raise ValueError('Invalid console UID')
+        wake=sample.get('wake_seq',0)
+        if type(wake) is not int or not 0<=wake<=2**53:raise ValueError('Invalid wake sequence')
+        expected=self.pending_device
+        if expected is not None:
+            outcomes={'requested','denied','stale'}|({'simulated'} if self.simulate_devices else set())
+            if (not isinstance(device_result,dict) or set(device_result)!={'id','uid','action','result'}
+                    or any(device_result.get(k)!=expected[k] for k in ['id','uid','action'])
+                    or type(device_result['uid']) is not int or not isinstance(device_result['result'],str) or device_result['result'] not in outcomes):
+                raise ValueError('Invalid device acknowledgement')
+        elif device_result is not None:raise ValueError('Unexpected device acknowledgement')
         apps,results=sample['apps'],sample['results']
         if not isinstance(apps,list) or len(apps)>MAX_PROCESSES or not isinstance(results,list) or len(results)>MAX_KILLS:
             raise ValueError('Protected sample limit exceeded')
@@ -77,6 +96,7 @@ class SystemDecisions:
         if acknowledgements!=set(self.pending):raise ValueError('Missing execution acknowledgement')
         with self.authority.store.lock:
             now=self.authority.clock()
+            self.device_result=device_result
             self.recorded={token:until for token,until in self.recorded.items() if until>now}
             for result in results:
                 token=result['identity'];pending=self.pending[token]
@@ -86,7 +106,7 @@ class SystemDecisions:
             while len(self.recorded)>MAX_PROCESSES:self.recorded.pop(next(iter(self.recorded)))
             engines={}
             # Account contexts are derived only from the root scanner's UID.
-            for uid in {app['uid'] for app in apps}|{self.authority.controller_uid}:
+            for uid in {app['uid'] for app in apps}|{self.authority.controller_uid}|({console} if console>=500 else set()):
                 try:engine=self.configure(uid)
                 except PolicyError:continue
                 engine.tick();engines[uid]=engine
@@ -111,11 +131,19 @@ class SystemDecisions:
                     command={k:app[k] for k in ['pid','uid','identity']};commands.append(command)
                     pending[app['identity']]={**command,'application':app['application'],'blocks':hits}
             self.pending=pending
-            return {'kill':commands}
+            command={'kill':commands};self.pending_device=None
+            if has_power and console in engines:
+                engine=engines[console];gate=self.gate.update(console,wake)
+                if gate and gate['phase']=='sleep' and engine.now()-self.device_last.get(console,0)>=2:
+                    self.device_last[console]=engine.now()
+                    self.pending_device={'id':secrets.token_hex(32),'uid':console,'action':'sleep'}
+                    command['device']=dict(self.pending_device)
+            elif has_power:self.gate.console=console
+            return command
 
 
 class SystemExecution:
-    def __init__(self,authority,executable,protected_paths=()):
+    def __init__(self,authority,executable,protected_paths=(),simulate_devices=False):
         self.authority=authority
         self.executable=Path(executable)
         self.protected_paths=tuple(protected_paths)
@@ -123,6 +151,9 @@ class SystemExecution:
         self.last_sample=None
         self.state='not-started'
         self.inventory={}
+        self.simulate_devices=simulate_devices;self.device_result=None
+        from .device_blocks import SleepGate
+        self.device_gate=SleepGate(authority.engine)
 
     def applications(self,uid):
         with self.authority.store.lock:
@@ -131,13 +162,14 @@ class SystemExecution:
 
     def status(self):
         with self.authority.store.lock:
-            return {'status':self.state,'last_sample_age':None if self.last_sample is None else max(0,time.monotonic()-self.last_sample),'process_source':'kernel'}
+            return {'status':self.state,'last_sample_age':None if self.last_sample is None else max(0,time.monotonic()-self.last_sample),'process_source':'kernel',
+                    'device_result':None if self.device_result is None else {k:self.device_result[k] for k in ['action','result']}}
 
     def run(self,stop):
         self.state='starting'
         process=subprocess.Popen([str(self.executable)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0)
         self.process=process
-        decisions=SystemDecisions(self.authority,self.protected_paths)
+        decisions=SystemDecisions(self.authority,self.protected_paths,self.simulate_devices,self.device_gate)
         try:
             for sample in native_samples(process,stop,lambda:None):
                 command=decisions.consume(sample)
@@ -146,6 +178,7 @@ class SystemExecution:
                     self.inventory={}
                     for app in sample['apps']:self.inventory.setdefault(app['uid'],[]).append(dict(app))
                     self.last_sample=time.monotonic();self.state='running'
+                    self.device_result=decisions.device_result
             if not stop.is_set():raise RuntimeError('Protected executor exited')
         except BaseException:
             self.state='failed'

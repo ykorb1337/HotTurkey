@@ -23,7 +23,7 @@ def main():
     from build_icons import build_icons
     application_icon=build_icons()
     module_cache=BUILD/"swift-cache";module_cache.mkdir(exist_ok=True)
-    targets=[("Agent.swift","HotTurkeyAgent",["AppKit","CoreGraphics"]),("Desktop.swift","HotTurkey",["AppKit","WebKit","UserNotifications"]),("PeerCheck.swift","HotTurkeyPeerCheck",["Foundation","Security"]),("PolicyClient.swift","HotTurkeyPolicyClient",["Foundation"])]
+    targets=[("Agent.swift","HotTurkeyAgent",["AppKit","CoreGraphics","IOKit"]),("Desktop.swift","HotTurkey",["AppKit","WebKit","UserNotifications"]),("PeerCheck.swift","HotTurkeyPeerCheck",["Foundation","Security"]),("PolicyClient.swift","HotTurkeyPolicyClient",["Foundation"])]
     targets.append(('SessionAgent.swift','HotTurkeySessionAgent',['AppKit','CoreGraphics','Security']))
     targets.append(('BrowserHost.swift','HotTurkeyBrowserHost',['Foundation','Security']))
     if args.qa:
@@ -37,13 +37,14 @@ def main():
         command=["/usr/bin/swiftc","-swift-version","5","-target",architecture+'-apple-macos12.0',"-O","-module-cache-path",str(module_cache),str(ROOT/"native"/source),"-o",str(BUILD/name)]
         if source in {'PolicyClient.swift','SessionAgent.swift','BrowserHost.swift'}:command.append(str(ROOT/'native/LocalPolicySocket.swift'))
         if source in {'SessionAgent.swift','SessionDesktopFixture.swift'}:command.append(str(ROOT/'native/SessionDesktop.swift'))
+        if source in {'Agent.swift','SessionAgent.swift'}:command.append(str(ROOT/'native/SleepGuardUI.swift'))
         if name in {'HotTurkeyPolicyClientQA','HotTurkeySessionAgentQA','HotTurkeyBrowserHostQA'}:command.extend(['-D','QA'])
         for framework in frameworks:command.extend(["-framework",framework])
         subprocess.run(command,check=True)
         if name!='HotTurkey':
             subprocess.run(["/usr/bin/codesign","--force","--options","runtime","--sign","-",str(BUILD/name)],check=True)
     for name,flags in [('HotTurkeySystemAgent',[])]+([('HotTurkeySystemAgentQA',['-DHOTTURKEY_QA'])] if args.qa else []):
-        subprocess.run(['/usr/bin/clang','-fobjc-arc','-O2','-Wall','-Wextra','-Werror','-mmacosx-version-min=12.0','-framework','Foundation',*flags,str(ROOT/'native/SystemAgent.m'),'-o',str(BUILD/name)],check=True)
+        subprocess.run(['/usr/bin/clang','-fobjc-arc','-O2','-Wall','-Wextra','-Werror','-mmacosx-version-min=12.0','-framework','Foundation','-framework','SystemConfiguration','-framework','IOKit',*flags,str(ROOT/'native/SystemAgent.m'),'-o',str(BUILD/name)],check=True)
         subprocess.run(['/usr/bin/codesign','--force','--options','runtime','--sign','-',str(BUILD/name)],check=True)
     app=BUILD/"HotTurkey.app/Contents"
     (app/"MacOS").mkdir(parents=True,exist_ok=True)

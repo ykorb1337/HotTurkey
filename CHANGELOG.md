@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add weekly scheduled sleep with an explicit inactive default, a mandatory
+  user-chosen safety word and a 30-second recovery countdown before each new
+  interval, console switch or wake. A native recovery surface and persistent
+  sidebar action release only the current account's current device episode;
+  an authenticated controller can instead stop current device plans and cancel
+  their automatic starts. Preserve emergency release through restarts/wakes,
+  hash safety words locally and keep them out of rule exports and logs.
+  Signed QA verifies countdowns and simulated power receipts; physical sleep,
+  real login/wake and privileged production installation remain unverified.
+
 - Deliver protected login-UI preferences through the attested session agent.
   Use kernel audit login/boot markers, process-bound acknowledgements, bounded
   retries and persistent completion rather than relaunching on wake or agent

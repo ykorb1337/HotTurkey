@@ -8,12 +8,50 @@
 #include <unistd.h>
 #include <errno.h>
 #include <math.h>
+#import <SystemConfiguration/SystemConfiguration.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
+#include <IOKit/IOMessage.h>
+#include <dispatch/dispatch.h>
+#include <stdatomic.h>
 
 #define MAX_PIDS 32768
 #define MAX_FRAME (4 * 1024 * 1024)
 #define MAX_KILLS 8192
 static unsigned char epoch[32];
 static BOOL badFrame=NO;
+static atomic_uint_fast64_t wakeSequence=0;
+static io_connect_t powerNotifications=0;
+static void powerChanged(void *refcon,io_service_t service,natural_t type,void *argument) {
+    (void)refcon;(void)service;
+    if (type==kIOMessageSystemHasPoweredOn) atomic_fetch_add(&wakeSequence,1);
+    if ((type==kIOMessageSystemWillSleep || type==kIOMessageCanSystemSleep) && powerNotifications)
+        IOAllowPowerChange(powerNotifications,(intptr_t)argument);
+}
+static uid_t consoleUID(void) {
+    uid_t uid=0;gid_t gid=0;
+    CFStringRef name=SCDynamicStoreCopyConsoleUser(NULL,&uid,&gid);
+    if (name) CFRelease(name);
+#ifdef HOTTURKEY_QA
+    if (uid!=getuid()) return 0;
+#endif
+    return uid>=500?uid:0;
+}
+static NSDictionary *powerAction(NSDictionary *command) {
+    NSString *outcome=@"stale";
+    if (consoleUID()==[command[@"uid"] unsignedIntValue]) {
+#ifdef HOTTURKEY_QA
+        outcome=@"simulated"; // QA has no path to the physical sleep API.
+#else
+        io_connect_t connection=IOPMFindPowerManagement(MACH_PORT_NULL);
+        outcome=@"denied";
+        if (connection) {
+            if (IOPMSleepSystem(connection)==kIOReturnSuccess) outcome=@"requested";
+            IOServiceClose(connection);
+        }
+#endif
+    }
+    return @{@"id":command[@"id"],@"uid":command[@"uid"],@"action":@"sleep",@"result":outcome};
+}
 
 static BOOL integer(id value, unsigned long long high) {
     if (![value isKindOfClass:[NSNumber class]] || CFGetTypeID((__bridge CFTypeRef)value)==CFBooleanGetTypeID()) return NO;
@@ -99,13 +137,23 @@ int main(int argc,const char **argv) {
     if (geteuid()!=getuid() || getuid()<500) return 77;
 #endif
     arc4random_buf(epoch,sizeof(epoch));signal(SIGPIPE,SIG_IGN);
-    NSArray *results=@[];NSSet *previous=[NSSet set];
+    IONotificationPortRef notificationPort=NULL;io_object_t notifier=0;
+    powerNotifications=IORegisterForSystemPower(NULL,&notificationPort,powerChanged,&notifier);
+    if (powerNotifications && notificationPort) IONotificationPortSetDispatchQueue(notificationPort,dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0));
+    NSArray *results=@[];NSSet *previous=[NSSet set];id deviceResult=[NSNull null];
     while (true) {
         @autoreleasepool {
             NSArray *apps=scan();
-            if (!apps || !emit(@{@"apps":apps,@"front":@{},@"results":results})) return 70;
+            if (!apps || !emit(@{@"apps":apps,@"front":@{},@"results":results,@"console_uid":@(consoleUID()),@"device_result":deviceResult,@"wake_seq":@(atomic_load(&wakeSequence))})) return 70;
             NSDictionary *command=readCommand();if (!command) return feof(stdin)&&!badFrame?0:65;
-            if (command.count!=1 || ![command[@"kill"] isKindOfClass:[NSArray class]] || [command[@"kill"] count]>MAX_KILLS) return 65;
+            if ((command.count!=1 && command.count!=2) || ![command[@"kill"] isKindOfClass:[NSArray class]] || [command[@"kill"] count]>MAX_KILLS) return 65;
+            NSDictionary *device=command[@"device"];
+            if (command.count==2) {
+                if (![device isKindOfClass:[NSDictionary class]] || device.count!=3 || ![device[@"action"] isEqual:@"sleep"]
+                    || !integer(device[@"uid"],UINT_MAX) || [device[@"uid"] unsignedIntValue]<500
+                    || ![device[@"id"] isKindOfClass:[NSString class]] || [device[@"id"] length]!=64
+                    || [device[@"id"] rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location!=NSNotFound) return 65;
+            }
             for (id item in command[@"kill"]) {
                 if (![item isKindOfClass:[NSDictionary class]] || [item count]!=3 || !integer(item[@"pid"],INT_MAX) || !integer(item[@"uid"],UINT_MAX) || ![item[@"identity"] isKindOfClass:[NSString class]] || [item[@"identity"] length]!=64) return 65;
             }
@@ -123,6 +171,7 @@ int main(int argc,const char **argv) {
                 [next addObject:@{@"pid":pid,@"uid":uid,@"identity":token,@"signal":@(number),@"result":outcome}];
             }
             previous=[current copy];results=[next copy];
+            deviceResult=device?powerAction(device):[NSNull null];
         }
         usleep(1000000);
     }

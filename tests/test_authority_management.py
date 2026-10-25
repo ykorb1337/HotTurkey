@@ -28,6 +28,19 @@ class ManagementTests(unittest.TestCase):
             with self.subTest(op=op),self.assertRaises(PolicyError):self.call(op)
         self.session=self.call('authenticate',{'password':'secret'})['session']
         self.assertTrue(self.call('export')['blocks'])
+    def test_device_recovery_scopes_the_word_to_kernel_account_and_protects_configuration(self):
+        with self.assertRaises(PolicyError):self.call('configure-device-recovery',{'word':'fixture-escape'},uid=502)
+        self.call('configure-device-recovery',{'word':'fixture-escape'})
+        block=self.block(device='sleep',confirm_device=True)
+        with self.assertRaises(PolicyError):self.call('device-recover',{'word':'fixture-escape','stop_plan':True},uid=502)
+        with self.assertRaises(PolicyError):self.call('device-recover',{'word':'fixture-escape','uid':501},uid=502)
+        self.assertTrue(self.call('device-recover',{'word':'fixture-escape'},uid=502)['ok'])
+        self.assertTrue(self.authority.engine(501).active(self.authority.engine(501).find(block['id'])))
+        self.assertFalse(self.authority.engine(502).active(self.authority.engine(502).find(block['id'])))
+        self.call('settings',{'password':'manager-only'})
+        with self.assertRaises(PolicyError):self.call('device-recover',{'word':'fixture-escape','stop_plan':True})
+        self.session=self.call('authenticate',{'password':'manager-only'})['session']
+        self.assertTrue(self.call('device-recover',{'word':'fixture-escape','stop_plan':True})['stopped'])
     def test_settings_are_atomic_and_strictness_remains_locked(self):
         b=self.block();self.call('lock',{'id':b['id'],'type':'timer','until':self.clock.now+600})
         self.call('settings',{'theme':'dark','text_scale':150,'open_at_login':True})
@@ -58,6 +71,7 @@ class ManagementTests(unittest.TestCase):
         self.assertNotEqual(imported['id'],b['id']);self.assertFalse(imported['enabled']);self.assertEqual(imported['lock'],{'type':'none'})
         self.assertEqual(imported['autostart'],{'type':'none'})
     def test_retaining_imported_device_autostart_requires_explicit_confirmation(self):
+        self.authority.engine(501).configure_device_recovery('fixture-escape')
         incoming={'name':'Device','device':'shutdown','autostart':{'type':'once','at':self.clock.now+60}}
         with self.assertRaises(PolicyError):self.call('import',{'blocks':[incoming],'allow_autostart':True})
         self.assertEqual(self.store.state['blocks'],[])

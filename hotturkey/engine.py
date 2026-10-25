@@ -43,6 +43,7 @@ class Engine:
         self.start_time = self.now()
         self.last_prune = 0
         self.application_targets = None
+        self.device_recovery_retry=0
 
     def now(self):
         return max(self.wall(), self.anchor + self.monotonic()-self.mono_anchor)
@@ -90,6 +91,16 @@ class Engine:
         return min(starts) if starts else None
 
     def locked(self,b):
+        return self.device_guard(b) or self.explicit_locked(b)
+
+    def device_guard(self,b):
+        return b.get('device','none')!='none' and b.get('enabled',False) and b.get('mode')=='scheduled' and self.interval(b) is not None
+
+    def device_window(self,b):
+        return (b['device']!='none' and b['enabled'] and self.interval(b) is not None
+                and (b['mode']!='continuous' or self.runtime(b).get('device_until',0)>self.now()))
+
+    def explicit_locked(self,b):
         lock, now = b.get("lock",{}), self.now()
         typ = lock.get("type","none")
         if typ == "none": return False
@@ -105,6 +116,8 @@ class Engine:
         return True
 
     def active(self,b):
+        if b['device']!='none' and not self.store.state['settings']['device_recovery_hash']:return False
+        if b['device']!='none' and self.runtime(b).get('device_emergency_until',0)>self.now():return False
         if b["device"]!="none" and b["mode"]=="continuous" and self.runtime(b).get("device_until",0)<=self.now():return False
         return b["enabled"] and (not b["users"] or self.user in b["users"]) and bool(self.interval(b))
 
@@ -112,6 +125,7 @@ class Engine:
         rt=self.runtime(b)
         rt["started"]=self.now()
         rt.pop('pomodoro_started',None)
+        if rt.get('device_emergency_until',0)<=self.now():rt.pop('device_emergency_until',None)
         if b["device"]!="none" and b["mode"]=="continuous":
             rt["device_until"]=self.now()+b.get("device_minutes",15)*60
             b["lock"]={"type":"timer","until":rt["device_until"]}
@@ -164,24 +178,36 @@ class Engine:
         s=copy.deepcopy(b)
         s["lock"].pop("hash",None)
         s["locked"]=self.locked(b)
+        if self.device_guard(b) and not self.explicit_locked(b):
+            s['lock']={'type':'schedule','before_minutes':0,'automatic_device':True}
         s["active"]=self.active(b)
         s["break_status"]=self.break_state(b)
         s["blocking"]=s["active"] and not s["break_status"]["allowed"]
         s["next_start"]=self.next_start(b)
+        if b['device']!='none':
+            s['device_recovery_required']=not bool(self.store.state['settings']['device_recovery_hash'])
+            s['device_emergency_until']=self.runtime(b).get('device_emergency_until',0)
         if b["device"]!="none" and b["mode"]=="continuous":s["device_remaining"]=max(0,self.runtime(b).get("device_until",0)-self.now())
+        if b['device']!='none' and b['mode']=='scheduled':
+            window=self.interval(b)
+            if window:s.update(device_until=window[1],device_remaining=max(0,window[1]-self.now()))
         return s
 
     def snapshot(self):
         with self.store.lock:
             settings=copy.deepcopy(self.store.state["settings"])
             settings["settings_password"]=bool(settings["settings_password"])
+            settings['device_recovery_hash']=bool(settings['device_recovery_hash'])
             return {"blocks":[self.status(b) for b in self.store.state["blocks"]],"settings":settings,"now":self.now(),"user":self.user,"extensions":copy.deepcopy(self.heartbeats)}
 
     def save_block(self,value,ident=None):
+        if isinstance(value,dict) and 'confirm_device' in value and type(value['confirm_device']) is not bool:raise PolicyError('设备动作确认无效')
         with self.store.lock:
             previous=self.find(ident) if ident else None
             if previous and self.locked(previous): raise PolicyError("规则已锁定，可新增屏蔽网站和应用；其他修改须先解锁")
             b=validate_block(value,previous)
+            if b['device']!='none' and (b['enabled'] or b['autostart']['type']!='none') and not self.store.state['settings']['device_recovery_hash']:
+                raise PolicyError('请先设置设备限制的紧急安全词')
             if b["autostart"].get("type")!="none" and b["device"]!="none" and not value.get("confirm_device"):
                 if not previous or previous.get("autostart")!=b["autostart"]:
                     raise PolicyError("设备自动启动需要确认设备动作")
@@ -219,11 +245,14 @@ class Engine:
             self.store.save()
 
     def toggle(self,ident,enabled=None,confirm_device=False):
+        if enabled is not None and type(enabled) is not bool:raise PolicyError('启用状态无效')
+        if type(confirm_device) is not bool:raise PolicyError('设备动作确认无效')
         with self.store.lock:
             b=self.find(ident)
             if self.locked(b): raise PolicyError("规则已锁定")
             desired=not b["enabled"] if enabled is None else bool(enabled)
             if desired and b["device"]!="none" and not confirm_device: raise PolicyError("请确认设备动作")
+            if desired and b['device']!='none' and not self.store.state['settings']['device_recovery_hash']:raise PolicyError('请先设置设备限制的紧急安全词')
             if desired and not b["enabled"]:self.start(b)
             b["enabled"]=desired
             self.store.save()
@@ -294,6 +323,7 @@ class Engine:
     def unlock(self,ident,data):
         with self.store.lock:
             b=self.find(ident)
+            if self.device_guard(b):raise PolicyError('强制休息时段尚未结束，不能解除设备限制')
             lock=b["lock"]
             if self.locked(b):
                 typ=lock["type"]
@@ -315,6 +345,36 @@ class Engine:
             b["lock"]={"type":"none"}
             self.store.save()
             return self.status(b)
+
+    def configure_device_recovery(self,word,previous_word=None):
+        with self.store.lock:
+            if not isinstance(word,str) or not 6<=len(word)<=256:raise PolicyError('安全词需为 6–256 个字符')
+            if word!=word.strip():raise PolicyError('安全词首尾不能包含空白')
+            stored=self.store.state['settings']['device_recovery_hash']
+            if stored and any(b['device']!='none' and self.locked(b) for b in self.store.state['blocks']):
+                if not isinstance(previous_word,str) or not password_ok(previous_word,stored):raise PolicyError('设备限制期间更改安全词需要验证原安全词')
+            self.store.state['settings']['device_recovery_hash']=password_hash(word);self.store.save()
+            return {'ok':True}
+
+    def recover_device(self,word,stop_plan=False):
+        with self.store.lock:
+            if type(stop_plan) is not bool:raise PolicyError('紧急停用选项无效')
+            if self.monotonic()<self.device_recovery_retry:raise PolicyError('请稍后重试安全词')
+            if not isinstance(word,str) or len(word)>256:raise PolicyError('安全词格式无效')
+            stored=self.store.state['settings']['device_recovery_hash']
+            if not stored or not password_ok(word,stored):
+                self.device_recovery_retry=self.monotonic()+3
+                raise PolicyError('安全词不正确')
+            affected=[];until=self.now()
+            for block in self.store.state['blocks']:
+                if block['device']=='none' or not (self.device_window(block) if stop_plan else self.active(block)):continue
+                end=self.runtime(block).get('device_until',0) if block['mode']=='continuous' else self.interval(block)[1]
+                until=max(until,end);affected.append(block)
+            if not affected:raise PolicyError('当前没有生效的设备限制')
+            for block in affected:
+                self.runtime(block)['device_emergency_until']=until
+                if stop_plan:block.update(enabled=False,autostart={'type':'none'},lock={'type':'none'})
+            self.store.save();return {'ok':True,'until':until,'count':len(affected),'stopped':stop_plan}
 
     def request_break(self,ident,data):
         with self.store.lock:
@@ -454,6 +514,10 @@ class Engine:
                 due=due or (typ=="daily" and local.weekday() in auto.get("days",[]) and local.hour*60+local.minute>=auto.get("minute",1440) and auto_rt.get("daily_fired")!=date)
                 due=due or (typ=="signin" and signin and (not b["users"] or self.user in b["users"]))
                 due=due or (typ=="schedule" and self.interval(b) and auto_rt.get("schedule_fired")!=self.interval(b)[0])
+                if due and b['device']!='none' and not self.store.state['settings']['device_recovery_hash']:continue
+                # Waking during an emergency release must not extend its original
+                # device deadline and resume restriction as soon as release ends.
+                if due and b['device']!='none' and rt.get('device_emergency_until',0)>now:continue
                 if due:
                     b["enabled"]=True
                     self.start(b)

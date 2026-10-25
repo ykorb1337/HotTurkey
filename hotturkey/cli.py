@@ -15,6 +15,8 @@ def main():
     commands=parser.add_subparsers(dest="command",required=True)
     commands.add_parser("status")
     commands.add_parser("open")
+    emergency=commands.add_parser('emergency');emergency.add_argument('--stop-plan',action='store_true',help='验证管理权限与安全词，停用当前设备计划及其自动启动')
+    commands.add_parser('recovery-word')
     serve=commands.add_parser("serve");serve.add_argument("--enforce",action="store_true")
     for name in ["start","stop","toggle","delete","unlock","break","reset-pomodoro"]:
         p=commands.add_parser(name);p.add_argument("block");p.add_argument("--answer");p.add_argument("--confirm-device",action="store_true")
@@ -59,7 +61,7 @@ def main():
                 raise ValueError(json.load(exc).get("error","操作失败")) from None
         if args.command=="open":webbrowser.open(origin+"/#token="+info["token"]);return
         state=call("state")
-        if not state["authenticated"] and args.command not in {"status","check"} and state.get('can_manage',True):
+        if not state["authenticated"] and (args.command not in {"status","check","emergency"} or args.command=='emergency' and args.stop_plan) and state.get('can_manage',True):
             import getpass
             password=args.settings_password or getpass.getpass("设置密码：")
             session=call("auth",{"password":password})["session"]
@@ -70,7 +72,16 @@ def main():
             if not b:raise ValueError("找不到该规则")
             ident=b["id"]
         command=args.command
-        if command=="status":result=state
+        if command=='emergency':
+            import getpass
+            result=call('device/recover',{'word':getpass.getpass('紧急安全词：'),'stop_plan':args.stop_plan})
+        elif command=='recovery-word':
+            import getpass
+            word=getpass.getpass('新安全词（至少 6 个字符）：')
+            if word!=getpass.getpass('再次输入新安全词：'):raise ValueError('两次安全词不一致')
+            previous=getpass.getpass('原安全词（未锁定时可留空）：') if state['settings'].get('device_recovery_hash') else None
+            result=call('device/configure-recovery',{'word':word,'previous_word':previous})
+        elif command=="status":result=state
         elif command in {"start","stop","toggle"}:result=call("blocks/toggle",{"id":ident,"enabled":{"start":True,"stop":False,"toggle":None}[command],"confirm_device":args.confirm_device})
         elif command in {"delete","unlock","break","reset-pomodoro"}:result=call("blocks/"+command,{"id":ident,"answer":args.answer} if args.answer is not None else {"id":ident})
         elif command=="create":result=call("blocks/save",{"block":{"name":args.name,"websites":args.web,"applications":args.app}})

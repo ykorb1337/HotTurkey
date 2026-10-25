@@ -19,6 +19,7 @@ class EngineTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.store=Store(self.temp.name);self.clock=Clock();self.engine=Engine(self.store,self.clock.wall,self.clock.monotonic,"boot-1","alice")
     def tearDown(self):self.store.db.close();self.temp.cleanup()
     def make(self,**kw):
+        if kw.get('device','none')!='none' and not self.store.state['settings']['device_recovery_hash']:self.engine.configure_device_recovery('fixture-escape')
         value={"name":"Work","enabled":True,"websites":["example.com"],**kw}
         return self.engine.find(self.engine.save_block(value)["id"])
     def check(self,url="https://example.com",**kw):return self.engine.evaluate(url,**kw)["blocked"]

@@ -52,6 +52,7 @@ class AccountStore:
         runtime=self.context['runtime'].setdefault(block['id'],{'started':now})
         start=self.core.state['block_starts'].get(block['id'])
         if start and runtime.get('_start_generation')!=start['generation']:
+            if runtime.get('device_emergency_until',0)<=now:runtime.pop('device_emergency_until',None)
             runtime.update(started=start['at'],_start_generation=start['generation'])
             if 'device_until' in start:runtime['device_until']=start['device_until']
         # Device timer extensions are shared without resetting other break state.

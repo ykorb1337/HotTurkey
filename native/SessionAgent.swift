@@ -39,6 +39,9 @@ struct SessionAgentMain {
         #endif
         var eventSequence=0,sequence=0,accepted=0,consoleSamples=0,frontSamples=0
         let desktop=SessionDesktop()
+        #if !QA
+        let sleepGuard=SleepGuardUI()
+        #endif
         let center=NSWorkspace.shared.notificationCenter
         let observers=[NSWorkspace.didWakeNotification,NSWorkspace.sessionDidBecomeActiveNotification].map { name in
             center.addObserver(forName:name,object:nil,queue:.main) { _ in eventSequence+=1 }
@@ -63,10 +66,18 @@ struct SessionAgentMain {
                     if !front.isEmpty { frontSamples+=1;sample.merge(front) { _,new in new } }
                 }
                 if let result=desktop.result { sample["desktop_result"]=result }
+                #if !QA
+                if let word=sleepGuard.takeWord() { sample["recovery_word"]=word }
+                #endif
                 if let payload=try? JSONSerialization.data(withJSONObject:["op":"session-sample","data":sample]),
                    let response=try? request(payload,path:path,serverUID:serverUID),
                    let value=(try? JSONSerialization.jsonObject(with:response)) as? [String:Any],value["ok"] as? Bool==true,
-                   let result=value["result"] as? [String:Any],result["accepted"] as? Bool==true { accepted+=1;desktop.accepted(result) }
+                   let result=value["result"] as? [String:Any],result["accepted"] as? Bool==true {
+                    accepted+=1;desktop.accepted(result)
+                    #if !QA
+                    sleepGuard.render(result["sleep_guard"],recovery:result["recovery_result"])
+                    #endif
+                }
             }
             RunLoop.current.run(until:Date(timeIntervalSinceNow:1))
         }

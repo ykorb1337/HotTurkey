@@ -7,13 +7,14 @@ from .management import duplicate_block,import_blocks,settings_update
 from .model import CATEGORIES,DEFAULT_SETTINGS,PolicyError
 
 FIELDS={
-    'settings':set(DEFAULT_SETTINGS)-{'settings_password'}|{'password'},
+    'settings':set(DEFAULT_SETTINGS)-{'settings_password','device_recovery_hash'}|{'password'},
+    'configure-device-recovery':{'word','previous_word'},
     'duplicate':{'id','name'},'import':{'blocks','allow_autostart','confirm_device'},
     'export':set(),'categories':set(),'users':set(),
     'statistics':{'since','until','user','q','block','kind'},
     'statistics-export':set(),'statistics-clear':set(),
 }
-MUTATIONS={'settings','duplicate','import','statistics-clear'}
+MUTATIONS={'settings','duplicate','import','statistics-clear','configure-device-recovery'}
 
 
 class AuthorityManagement:
@@ -31,6 +32,7 @@ class AuthorityManagement:
         if set(data)-FIELDS[operation]:raise PolicyError('管理字段无效')
         self.authorize(uid,operation,session)
         engine=self.authority.engine(uid)
+        if operation=='configure-device-recovery':return engine.configure_device_recovery(data.get('word'),data.get('previous_word'))
         if operation=='settings':
             updated=settings_update(engine,data)
             password_changed=updated['settings_password']!=self.authority.store.state['settings']['settings_password']

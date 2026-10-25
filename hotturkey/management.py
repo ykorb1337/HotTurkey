@@ -17,7 +17,7 @@ def settings_update(engine,data):
         updated['settings_password']=password_hash(password) if password else None
     locked=any(engine.locked(block) for block in engine.store.state['blocks'])
     for key,value in data.items():
-        if key not in DEFAULT_SETTINGS or key=='settings_password':continue
+        if key not in DEFAULT_SETTINGS or key in {'settings_password','device_recovery_hash'}:continue
         if locked and key in STRICT_SETTINGS and value!=current[key]:raise PolicyError('锁定期间不能修改拦截严格度')
         if isinstance(DEFAULT_SETTINGS[key],bool) and type(value) is not bool:raise PolicyError('设置值无效')
         updated[key]=value
@@ -40,6 +40,7 @@ def import_blocks(engine,incoming,allow_autostart=False,confirm_device=False):
         if block['autostart']['type']!='none':
             if not allow_autostart:block['autostart']={'type':'none'};disabled+=1
             elif block['device']!='none' and not confirm_device:raise PolicyError('保留设备自动启动需要确认设备动作')
+            if allow_autostart and block['device']!='none' and not engine.store.state['settings']['device_recovery_hash']:raise PolicyError('请先设置设备限制的紧急安全词')
         blocks.append(block)
     names=[block['name'] for block in engine.store.state['blocks']]+[block['name'] for block in blocks]
     if len(set(names))!=len(names):raise PolicyError('导入名称重复，请先重命名')

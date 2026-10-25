@@ -29,6 +29,26 @@ class ServiceTests(unittest.TestCase):
         code,value=self.request('/api/'+path,data);self.assertEqual(code,200,value);return value
     def block(self,**kw):return self.call('blocks/save',{'block':{'name':'Work','websites':['example.com'],'enabled':True,**kw}})
     def test_no_token_rejected(self):self.assertEqual(self.request('/api/state',token=False)[0],401)
+    def test_device_enable_requires_a_safety_word(self):
+        self.assertEqual(self.request('/api/blocks/save',{'block':{'name':'Sleep','device':'sleep','enabled':True,'confirm_device':True}})[0],400)
+        self.call('device/configure-recovery',{'word':'fixture-escape'})
+        b=self.block(device='sleep',device_minutes=2,confirm_device=True)
+        self.assertTrue(b['active']);self.assertTrue(b['locked'])
+        self.assertIs(self.call('state')['settings']['device_recovery_hash'],True)
+    def test_device_emergency_works_even_when_settings_and_overview_are_protected(self):
+        self.call('device/configure-recovery',{'word':'fixture-escape'})
+        b=self.block(device='sleep',device_minutes=2,confirm_device=True)
+        self.call('settings',{'password':'manager-only','protect_overview':True})
+        self.assertEqual(self.call('state')['blocks'],[])
+        result=self.call('device/recover',{'word':'fixture-escape'});self.assertEqual(result['count'],1)
+        self.assertFalse(self.service.engine.active(self.service.engine.find(b['id'])))
+        self.assertEqual(self.request('/api/export')[0],400)
+    def test_device_recovery_configuration_requires_settings_authorization(self):
+        self.call('settings',{'password':'manager'})
+        self.assertEqual(self.request('/api/device/configure-recovery',{'word':'fixture-escape'})[0],400)
+        self.assertIsNone(self.service.store.state['settings']['device_recovery_hash'])
+        self.session=self.call('auth',{'password':'manager'})['session']
+        self.call('device/configure-recovery',{'word':'fixture-escape'})
     def test_single_instance(self):
         from hotturkey.model import PolicyError
         with self.assertRaises(PolicyError):Service(self.temp.name)

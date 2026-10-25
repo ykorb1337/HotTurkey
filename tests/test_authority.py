@@ -36,6 +36,7 @@ class AuthorityTests(unittest.TestCase):
     def tearDown(self):self.store.db.close();self.temp.cleanup()
 
     def block(self,**options):
+        if options.get('device','none')!='none' and not self.store.state['settings']['device_recovery_hash']:self.alice.configure_device_recovery('fixture-escape')
         value={'name':'Shared','enabled':True,'websites':['example.com'],**options}
         result=self.authority.manage(501,'save',{'block':value})
         return self.alice.find(result['id'])

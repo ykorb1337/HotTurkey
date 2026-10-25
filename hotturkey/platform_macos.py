@@ -8,6 +8,7 @@ import subprocess
 import time
 from xml.parsers.expat import ExpatError
 from pathlib import Path
+from .model import PolicyError
 
 LOG=logging.getLogger("hotturkey")
 ROOT=Path(__file__).resolve().parent.parent
@@ -117,6 +118,9 @@ def enforce_loop(service):
     service.agent_process=process
     service.helper_starts+=1
     e=service.engine
+    from .device_blocks import SleepGate
+    service.device_gate=SleepGate(lambda _:e,actions=None)
+    wake_sequence=0
     last_sample=None
     previous_states={}
     try:
@@ -125,6 +129,12 @@ def enforce_loop(service):
             if service.stop.is_set(): break
             with service.store.lock:
                 e.tick(signin=bool(sample.get("signin")))
+                recovery=None
+                if 'recovery_word' in sample:
+                    try:recovery=e.recover_device(sample['recovery_word'])
+                    except PolicyError as exc:recovery={'error':str(exc)}
+                if sample.get('signin'):wake_sequence+=1
+                gate=service.device_gate.update(os.getuid(),wake_sequence)
                 service.native_session_initialized=True
                 settings=service.store.state["settings"]
                 foreground=sample.get("front",{})
@@ -132,7 +142,14 @@ def enforce_loop(service):
                 if foreground and foreground.get("bundle") not in BROWSERS:
                     e.usage({**foreground,"idle":idle},"native")
                 kills=[]
+                from .device_blocks import selected_device
+                chosen=selected_device(e)
                 device=None
+                if chosen is not None:
+                    rt=e.runtime(chosen)
+                    interval=2 if chosen['device']=='sleep' else 10
+                    if gate and gate['phase']=='sleep' and (sample.get('signin') or e.now()-rt.get('last_device',0)>=interval):
+                        device=chosen['device'];rt['last_device']=e.now();service.store.save()
                 notices=service.browser_notices if settings['notifications'] else []
                 service.browser_notices=[]
                 any_locked=any(e.locked(b) for b in service.store.state["blocks"])
@@ -163,11 +180,6 @@ def enforce_loop(service):
                 for b in service.store.state["blocks"]:
                     state=e.status(b)
                     rt=e.runtime(b)
-                    if b["device"]!="none" and state["blocking"]:
-                        if e.now()-rt.get("last_device",0)>10:
-                            device=b["device"]
-                            rt["last_device"]=e.now()
-                            service.store.save()
                     summary=(state["active"],state["blocking"],state["locked"])
                     old=previous_states.get(b["id"])
                     if old and old!=summary and settings["notifications"]:
@@ -192,7 +204,7 @@ def enforce_loop(service):
                                     notices.append(b["name"]+" · "+str(warning)+" 分钟后"+label)
                                     rt["warnings"].append(key)
                         if len(rt.get("warnings",[]))>200:rt["warnings"]=rt["warnings"][-200:]
-            if not native_command(process,service.stop,{"kill":kills,"device":device,"notifications":notices}):break
+            if not native_command(process,service.stop,{"kill":kills,"device":device,"notifications":notices,'sleep_guard':gate,'recovery_result':recovery}):break
             # Report healthy only after a full sample/decision exchange.
             service.desktop_at=time.monotonic()
             service.worker_error=None

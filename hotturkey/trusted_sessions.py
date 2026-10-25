@@ -52,7 +52,8 @@ class TrustedSessions:
 
     @staticmethod
     def validate(data):
-        if set(data)-{'desktop_result'}!=FIELDS:raise PolicyError('会话采样字段无效')
+        if set(data)-{'desktop_result','recovery_word'}!=FIELDS:raise PolicyError('会话采样字段无效')
+        if 'recovery_word' in data and (not isinstance(data['recovery_word'],str) or len(data['recovery_word'])>256):raise PolicyError('安全词格式无效')
         if 'desktop_result' in data:
             if data['desktop_result'] is None:raise PolicyError('桌面启动回执无效')
             SessionDesktop.validate(data['desktop_result'])
@@ -96,6 +97,10 @@ class TrustedSessions:
                 known[str(uid)]=marker
                 signin=signin or bool(same and data['event_seq']>old['event'])
             engine.tick(signin=signin)
+            recovery=None
+            if 'recovery_word' in data:
+                try:recovery=engine.recover_device(data['recovery_word'])
+                except PolicyError as exc:recovery={'error':str(exc)}
             prefix='system:'
             if not (continuous and valid):
                 for source in list(engine.sources):
@@ -127,5 +132,8 @@ class TrustedSessions:
             desktop=self.desktop.consume(uid,owner,marker,data['on_console'],previous_login,data.get('desktop_result'))
             self.authority.store.save()
             result={'accepted':True,'foreground_verified':bool(front)}
+            gate=getattr(self.execution,'device_gate',None)
+            if gate is not None:result['sleep_guard']=gate.status(uid)
+            if recovery is not None:result['recovery_result']=recovery
             if desktop is not None:result['desktop']=desktop
             return result

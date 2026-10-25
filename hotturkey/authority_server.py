@@ -154,6 +154,11 @@ class PolicyRPC:
                 for key in ['active','embedded']:
                     if key in data and type(data[key]) is not bool:raise PolicyError('页面状态无效')
                 return self.authority.engine(uid).evaluate(url,channels,data.get('active',True),data.get('embedded',False))
+            if operation=='device-recover':
+                if set(data)-{'word','stop_plan'} or 'word' not in data:raise PolicyError('安全词字段无效')
+                if type(data.get('stop_plan',False)) is not bool:raise PolicyError('紧急停用选项无效')
+                if data.get('stop_plan') and (uid!=self.authority.controller_uid or not self.authority.authenticated(uid,session)):raise PolicyError('紧急停用计划需要管理账户验证；仍可用安全词放行本次时段')
+                return self.authority.engine(uid).recover_device(_text(data['word'],256,'安全词'),data.get('stop_plan',False))
             if operation=='break':
                 if set(data)-{'id','answer'}:raise PolicyError('休息字段无效')
                 ident=_text(data.get('id'),128,'规则')
