@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Atomically exchange existing installation directories with macOS
+  `RENAME_SWAP`, retaining the startup path across publication and rollback.
+  Version-2 journals record old/new file identities, reject partial commits
+  and recover interrupted exchanges without reinstalling the wrong version;
+  version-1 recovery remains supported. Actual test-installer SIGKILL scenarios
+  cover exchange, rollback, commit cleanup and initial journal publication.
+
 - Add a protected activation barrier binding a root-owned marker to the exact
   payload, transaction and controller. Until commit, signed health/session
   probes work but policy operations, automatic starts, usage and process/device

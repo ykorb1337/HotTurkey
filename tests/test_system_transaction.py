@@ -32,14 +32,51 @@ class TransactionTests(unittest.TestCase):
         transaction.commit();transaction.commit()
         self.assertEqual(self.targets['program'].read_text(),'new');self.assertFalse(list(self.root.glob('.hotturkey-backup-*')))
         with self.assertRaises(ValueError):transaction.rollback()
-    def test_interruption_between_renames_is_recovered_from_intent(self):
+    def test_interruption_after_atomic_exchange_keeps_startup_path_and_recovers(self):
         self.targets['program'].write_text('old');transaction=self.transaction();staged=self.stage('new');rename=Path.rename
         def fail_new(path,target):
             if path==staged:raise OSError('simulated power loss')
             return rename(path,target)
         with patch.object(Path,'rename',fail_new):
             with self.assertRaises(OSError):transaction.publish('program',staged)
-        self.assertFalse(self.targets['program'].exists())
+        self.assertEqual(self.targets['program'].read_text(),'new');self.assertEqual(staged.read_text(),'old')
+        self.assertEqual(self.transaction(True).recover(),'rolled-back');self.assertEqual(self.targets['program'].read_text(),'old')
+    def test_initial_journal_publication_double_link_is_safe_to_recover(self):
+        self.transaction();temporary=self.journal.with_name(self.journal.name+'.new');os.link(self.journal,temporary)
+        self.assertEqual(self.journal.stat().st_nlink,2)
+        self.assertEqual(self.transaction(True).recover(),'rolled-back')
+        self.assertFalse(temporary.exists());self.assertEqual(self.journal.stat().st_nlink,1)
+    def test_partial_exchange_cannot_cross_commit_barrier(self):
+        self.targets['program'].write_text('old');transaction=self.transaction();staged=self.stage('new')
+        with patch.object(Path,'rename',side_effect=OSError('backup not published')):
+            with self.assertRaises(OSError):transaction.publish('program',staged)
+        with self.assertRaises(ValueError):transaction.commit()
+        self.assertEqual(transaction.value['status'],'active')
+        self.assertEqual(self.transaction(True).recover(),'rolled-back');self.assertEqual(self.targets['program'].read_text(),'old')
+    def test_interrupted_rollback_does_not_swap_the_new_program_back_in(self):
+        self.targets['program'].write_text('old');transaction=self.transaction();transaction.publish('program',self.stage('new'))
+        with patch.object(transaction,'remove_owned',side_effect=OSError('cleanup interrupted')):
+            with self.assertRaises(OSError):transaction.rollback()
+        self.assertEqual(self.targets['program'].read_text(),'old')
+        self.assertEqual(self.transaction(True).recover(),'rolled-back');self.assertEqual(self.targets['program'].read_text(),'old')
+    def test_recovery_refuses_an_unrelated_replacement_inode(self):
+        self.targets['program'].write_text('old');transaction=self.transaction();transaction.publish('program',self.stage('new'))
+        self.targets['program'].rename(self.root/'held-new');self.targets['program'].write_text('unrelated')
+        with self.assertRaises(PermissionError):self.transaction(True).recover()
+        self.assertEqual(self.targets['program'].read_text(),'unrelated')
+        self.assertEqual(next(self.root.glob('.hotturkey-backup-*')).read_text(),'old')
+    def test_unsupported_atomic_exchange_has_no_unsafe_rename_fallback(self):
+        self.targets['program'].write_text('old');transaction=self.transaction()
+        with patch('hotturkey.system_transaction.atomic_exchange',side_effect=OSError('unsupported')):
+            with self.assertRaises(OSError):transaction.publish('program',self.stage('new'))
+        self.assertEqual(self.targets['program'].read_text(),'old');transaction.rollback()
+        self.assertEqual(self.targets['program'].read_text(),'old')
+    def test_legacy_journal_still_recovers_an_old_multi_rename_gap(self):
+        self.targets['program'].write_text('old');staged=self.stage('new');identifier='a'*32
+        backup=self.root/('.hotturkey-backup-'+identifier+'-program');self.targets['program'].rename(backup)
+        value={'version':1,'id':identifier,'status':'active','targets':{key:str(path) for key,path in self.targets.items()},
+               'steps':[{'key':'program','stage':staged.name,'had_original':True,'rolled_back':False}]}
+        self.journal.write_text(json.dumps(value));self.journal.chmod(0o600)
         self.assertEqual(self.transaction(True).recover(),'rolled-back');self.assertEqual(self.targets['program'].read_text(),'old')
     def test_interruption_after_publish_before_commit_restores_original(self):
         transaction=self.transaction();transaction.publish('program',self.stage('new'));self.assertTrue(self.targets['program'].exists())

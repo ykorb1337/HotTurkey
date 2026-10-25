@@ -37,6 +37,7 @@ jobs:
           python3 tests/integration_peer.py
           python3 tests/integration_system_package.py
           python3 tests/integration_installation_gate.py
+          python3 tests/integration_system_transaction.py
           python3 tests/integration_runtime.py
           python3 tests/integration_authority.py
           python3 tests/integration_system_enforcement.py

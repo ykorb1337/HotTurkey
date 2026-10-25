@@ -49,6 +49,8 @@ python3 -B scripts/prepare_system.py --inspect build/protected-payload
 
 `system_transaction.py` 为调用者预先确定的文件目标提供受保护祖先检查、互斥锁、同目录原子改名和先写入再同步的事务日志。提交前中断可逆序恢复原文件；提交点持久化后只完成备份清理，避免回退已经启用的新数据。恢复时目标必须与调用者的固定路径映射完全相同，日志不能提供任意文件路径。它是文件事务组件，不负责服务状态或授权。
 
+既有目标使用 macOS 的 `renamex_np(..., RENAME_SWAP)` 原子交换，发布和恢复时均保留启动位置，文件系统不支持时直接拒绝，不降级为存在空档的多次改名。参见 Apple 的 [交换重命名能力说明](https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsswaprenaming)。v2 日志记录新旧 inode 身份，区分交换前、交换后和恢复清理中断；拒绝提交尚未完整发布的事务，也拒绝删除身份不符的文件。旧 v1 日志仍可回退。初始日志发布后遗留的双硬链接也能识别并安全恢复。
+
 ## 尚待完成
 
 源码现已接入安装提交屏障：正式 authority 启动时必须找到 `/private/var/db/local.hotturkey-install/activation.json`，其管理账户和安装清单 SHA-256 必须与当前程序一致。只有同一个事务从 `pending` 进入 `committed` 才能开放执行；文件缺失、权限错误、换成其他事务或提交状态倒退都会拒绝运行。此状态只能由未来的特权安装协调器发布，普通 API 不能创建或提交它；准备工具也不创建这个状态文件。
